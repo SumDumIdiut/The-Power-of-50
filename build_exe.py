@@ -101,24 +101,7 @@ print("="*60)
 # Run PyInstaller
 try:
     PyInstaller.__main__.run(args)
-    
-    print("\n" + "="*60)
-    print("BUILD SUCCESSFUL!")
-    print("="*60)
-    print("Executable location: dist/ThePowerOf50.exe")
-    print("File size: ~50-100 MB (includes Python + Pygame + all dependencies)")
-    print("\nYou can now distribute this single .exe file!")
-    print("="*60)
+    sys.exit(0)  # Exit immediately on success
 except Exception as e:
-    print("\n" + "="*60)
-    print("BUILD FAILED!")
-    print("="*60)
-    # Convert error to ASCII, replacing any Unicode characters
-    error_msg = str(e).encode('ascii', 'replace').decode('ascii')
-    print("Error: " + error_msg)
-    print("\nTroubleshooting:")
-    print("  1. Make sure PyInstaller is installed: pip install pyinstaller")
-    print("  2. Make sure all dependencies are installed: pip install -r requirements.txt")
-    print("  3. Check that all file paths are correct")
-    print("="*60)
+    # Silent failure - just exit with error code
     sys.exit(1)
