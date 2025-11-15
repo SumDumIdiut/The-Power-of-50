@@ -1070,9 +1070,9 @@ class ShooterGame:
         self.display_screen = screen
         screen_width, screen_height = screen.get_size()
         
-        # Fixed viewport dimensions (consistent visible area)
-        self.width = 1024
-        self.height = 600
+        # Fixed viewport dimensions (consistent visible area) - ZOOMED OUT
+        self.width = 1920
+        self.height = 1080
         
         # Create a surface at fixed resolution
         self.screen = pygame.Surface((self.width, self.height))

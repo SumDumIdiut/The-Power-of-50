@@ -276,16 +276,21 @@ class TowerDefenseGame:
         self.display_screen = screen
         screen_width, screen_height = screen.get_size()
         
-        # Fixed game dimensions (consistent gameplay area)
-        self.width = 1024
-        self.height = 600
+        # Fixed game dimensions (consistent gameplay area) - ZOOMED OUT
+        self.width = 1920
+        self.height = 1080
         
         # Create a surface at fixed resolution
         self.screen = pygame.Surface((self.width, self.height))
         
-        # Calculate scale for display (stretch to fill)
-        self.scale_x = screen_width / self.width
-        self.scale_y = screen_height / self.height
+        # Calculate scale to fit display (maintain aspect ratio)
+        scale_x = screen_width / self.width
+        scale_y = screen_height / self.height
+        self.scale = min(scale_x, scale_y)
+        
+        # Calculate offset to center the game
+        self.offset_x = (screen_width - self.width * self.scale) // 2
+        self.offset_y = (screen_height - self.height * self.scale) // 2
         
         # UI dimensions
         self.side_panel_width = 200
@@ -371,9 +376,9 @@ class TowerDefenseGame:
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left click
                         display_x, display_y = pygame.mouse.get_pos()
-                        # Scale mouse coordinates to game coordinates
-                        mouse_x = int(display_x / self.scale_x)
-                        mouse_y = int(display_y / self.scale_y)
+                        # Scale mouse coordinates to game coordinates (account for centering)
+                        mouse_x = int((display_x - self.offset_x) / self.scale)
+                        mouse_y = int((display_y - self.offset_y) / self.scale)
                         
                         # Check if clicking upgrade/sell buttons
                         if self.selected_tower and mouse_x > self.play_area_width:
@@ -416,9 +421,9 @@ class TowerDefenseGame:
                 if event.type == pygame.MOUSEBUTTONUP:
                     if event.button == 1 and self.dragging_tower:  # Release drag
                         display_x, display_y = pygame.mouse.get_pos()
-                        # Scale mouse coordinates to game coordinates
-                        mouse_x = int(display_x / self.scale_x)
-                        mouse_y = int(display_y / self.scale_y)
+                        # Scale mouse coordinates to game coordinates (account for centering)
+                        mouse_x = int((display_x - self.offset_x) / self.scale)
+                        mouse_y = int((display_y - self.offset_y) / self.scale)
                         if self.can_place_tower(mouse_x, mouse_y):
                             tower_costs = {'basic': 100, 'rapid': 150, 'bomb': 300, 'ice': 200}
                             cost = tower_costs[self.dragging_tower.type]
@@ -431,9 +436,9 @@ class TowerDefenseGame:
             # Update dragging tower position
             if self.dragging_tower:
                 display_x, display_y = pygame.mouse.get_pos()
-                # Scale mouse coordinates to game coordinates
-                mouse_x = int(display_x / self.scale_x)
-                mouse_y = int(display_y / self.scale_y)
+                # Scale mouse coordinates to game coordinates (account for centering)
+                mouse_x = int((display_x - self.offset_x) / self.scale)
+                mouse_y = int((display_y - self.offset_y) / self.scale)
                 self.dragging_tower.x = mouse_x
                 self.dragging_tower.y = mouse_y
             
@@ -531,12 +536,13 @@ class TowerDefenseGame:
             # Draw
             self.draw()
             
-            # Scale and blit to display (stretch to fill entire screen)
+            # Scale and blit to display (centered with black bars if needed)
+            self.display_screen.fill((0, 0, 0))  # Black bars
             scaled_surface = pygame.transform.scale(
                 self.screen,
-                (int(self.width * self.scale_x), int(self.height * self.scale_y))
+                (int(self.width * self.scale), int(self.height * self.scale))
             )
-            self.display_screen.blit(scaled_surface, (0, 0))
+            self.display_screen.blit(scaled_surface, (self.offset_x, self.offset_y))
             
             pygame.display.flip()
             self.clock.tick(60)
@@ -905,12 +911,13 @@ class TowerDefenseGame:
             msg_rect = msg_text.get_rect(center=(400, 300))
             self.screen.blit(msg_text, msg_rect)
             
-            # Scale and blit to display
+            # Scale and blit to display (centered with black bars if needed)
+            self.display_screen.fill((0, 0, 0))  # Black bars
             scaled_surface = pygame.transform.scale(
                 self.screen,
-                (int(self.width * self.scale_x), int(self.height * self.scale_y))
+                (int(self.width * self.scale), int(self.height * self.scale))
             )
-            self.display_screen.blit(scaled_surface, (0, 0))
+            self.display_screen.blit(scaled_surface, (self.offset_x, self.offset_y))
             
             pygame.display.flip()
             self.clock.tick(60)
@@ -935,12 +942,13 @@ class TowerDefenseGame:
             msg_rect = msg_text.get_rect(center=(400, 300))
             self.screen.blit(msg_text, msg_rect)
             
-            # Scale and blit to display
+            # Scale and blit to display (centered with black bars if needed)
+            self.display_screen.fill((0, 0, 0))  # Black bars
             scaled_surface = pygame.transform.scale(
                 self.screen,
-                (int(self.width * self.scale_x), int(self.height * self.scale_y))
+                (int(self.width * self.scale), int(self.height * self.scale))
             )
-            self.display_screen.blit(scaled_surface, (0, 0))
+            self.display_screen.blit(scaled_surface, (self.offset_x, self.offset_y))
             
             pygame.display.flip()
             self.clock.tick(60)

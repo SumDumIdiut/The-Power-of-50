@@ -8,33 +8,37 @@ import random
 
 class SnakeGame:
     def __init__(self, screen):
-        self.screen = screen
+        self.display_screen = screen
         screen_width, screen_height = screen.get_size()
         
-        # Fixed grid size (number of tiles)
-        self.grid_tiles_x = 26  # Fixed number of tiles horizontally
-        self.grid_tiles_y = 20  # Fixed number of tiles vertically
+        # Fixed game dimensions (1920x1080)
+        self.width = 1920
+        self.height = 1080
         
-        # Calculate tile size to fill screen completely (non-square tiles OK)
-        self.tile_width = screen_width // self.grid_tiles_x
-        self.tile_height = screen_height // self.grid_tiles_y
-        self.snake_size = self.tile_width  # Use for collision (use width as base)
+        # Create a surface at fixed resolution
+        self.screen = pygame.Surface((self.width, self.height))
         
-        # Grid fills entire screen
-        self.grid_width = self.grid_tiles_x * self.tile_width
-        self.grid_height = self.grid_tiles_y * self.tile_height
+        # Calculate scale to fit display (maintain aspect ratio)
+        scale_x = screen_width / self.width
+        scale_y = screen_height / self.height
+        self.scale = min(scale_x, scale_y)
         
-        # No offset - fills screen
-        self.offset_x = 0
-        self.offset_y = 0
+        # Calculate offset to center the game
+        self.offset_x = (screen_width - self.width * self.scale) // 2
+        self.offset_y = (screen_height - self.height * self.scale) // 2
         
-        # Use grid dimensions for gameplay
-        self.width = self.grid_width
-        self.height = self.grid_height
+        # Fixed grid size (number of tiles) - ZOOMED OUT
+        self.grid_tiles_x = 64  # More tiles for zoomed out view
+        self.grid_tiles_y = 36  # More tiles for zoomed out view
+        
+        # Calculate tile size
+        self.tile_width = self.width // self.grid_tiles_x
+        self.tile_height = self.height // self.grid_tiles_y
+        self.snake_size = self.tile_width
         
         # Start at grid-aligned position (center of grid)
-        start_x = (self.width // 2 // self.snake_size) * self.snake_size
-        start_y = (self.height // 2 // self.snake_size) * self.snake_size
+        start_x = (self.grid_tiles_x // 2) * self.tile_width
+        start_y = (self.grid_tiles_y // 2) * self.tile_height
         self.snake = [(start_x, start_y)]
         self.direction = (1, 0)
         self.next_direction = (1, 0)  # Buffer for next move
@@ -236,7 +240,13 @@ class SnakeGame:
                     else:
                         self.snake.insert(0, new_head)
                         
-                        if new_head == self.apple_pos:
+                        # Check if snake head is on same tile as apple
+                        head_tile_x = new_head[0] // self.tile_width
+                        head_tile_y = new_head[1] // self.tile_height
+                        apple_tile_x = self.apple_pos[0] // self.tile_width
+                        apple_tile_y = self.apple_pos[1] // self.tile_height
+                        
+                        if head_tile_x == apple_tile_x and head_tile_y == apple_tile_y:
                             self.score += 1
                             if self.score >= 50:
                                 self.won = True
@@ -301,6 +311,14 @@ class SnakeGame:
                 text = self.font.render('YOU WIN! - Press ENTER', True, (100, 255, 100))
                 text_rect = text.get_rect(center=(self.width // 2, self.height // 2))
                 self.screen.blit(text, text_rect)
+            
+            # Scale and blit to display (centered with black bars if needed)
+            self.display_screen.fill((0, 0, 0))  # Black bars
+            scaled_surface = pygame.transform.scale(
+                self.screen,
+                (int(self.width * self.scale), int(self.height * self.scale))
+            )
+            self.display_screen.blit(scaled_surface, (self.offset_x, self.offset_y))
             
             pygame.display.flip()
             self.clock.tick(60)

@@ -5,15 +5,32 @@ import random
 
 class PortalAnimation:
     def __init__(self, screen):
-        self.screen = screen
-        self.width, self.height = 800, 600
-        self.clock = pygame.time.Clock()
-        self.font = pygame.font.Font(None, 36)
+        self.display_screen = screen
+        screen_width, screen_height = screen.get_size()
         
-        # Portal properties
-        self.portal_pos = (400, 300)
-        self.portal_width = 120  # Oval width
-        self.portal_height = 180  # Oval height
+        # Fixed game dimensions (1920x1080)
+        self.width = 1920
+        self.height = 1080
+        
+        # Create a surface at fixed resolution
+        self.screen = pygame.Surface((self.width, self.height))
+        
+        # Calculate scale to fit display (maintain aspect ratio)
+        scale_x = screen_width / self.width
+        scale_y = screen_height / self.height
+        self.scale = min(scale_x, scale_y)
+        
+        # Calculate offset to center the game
+        self.offset_x = (screen_width - self.width * self.scale) // 2
+        self.offset_y = (screen_height - self.height * self.scale) // 2
+        
+        self.clock = pygame.time.Clock()
+        self.font = pygame.font.Font(None, 72)  # Scaled for 1920x1080
+        
+        # Portal properties (scaled for 1920x1080)
+        self.portal_pos = (960, 540)  # Center of 1920x1080
+        self.portal_width = 240  # Oval width (2x)
+        self.portal_height = 360  # Oval height (2x)
         self.rotation_angle = 0
         self.portal_active = True
         self.portal_closing = False
@@ -59,7 +76,7 @@ class PortalAnimation:
         """Spawn a new cube at the given position"""
         self.cubes.append({
             'pos': list(pos),
-            'size': 40,
+            'size': 80,  # Scaled for 1920x1080
             'angle': 0,
             'being_pulled': False,
             'spiral_angle': 0,
@@ -77,13 +94,13 @@ class PortalAnimation:
             dy = self.portal_pos[1] - cube['pos'][1]
             distance = math.sqrt(dx * dx + dy * dy)
             
-            # Check if cube is close enough to be pulled
-            pull_threshold = 150
+            # Check if cube is close enough to be pulled (scaled)
+            pull_threshold = 300  # Scaled for 1920x1080
             if distance < pull_threshold and self.portal_active:
                 cube['being_pulled'] = True
                 
                 # Start closing portal when cube gets close enough
-                if distance < 80 and not self.portal_closing:
+                if distance < 160 and not self.portal_closing:
                     self.portal_closing = True
                 
                 # Calculate pull force (stronger when closer)
@@ -95,20 +112,20 @@ class PortalAnimation:
                     cube['spiral_distance'] = distance
                     cube['spiral_initialized'] = True
                 
-                # Spiral motion
+                # Spiral motion (scaled)
                 cube['spiral_angle'] += 0.15 * (1 + pull_strength)
-                cube['spiral_distance'] -= 3 * pull_strength
+                cube['spiral_distance'] -= 6 * pull_strength  # Scaled speed
                 
                 # Update position
                 cube['pos'][0] = self.portal_pos[0] - math.cos(cube['spiral_angle']) * cube['spiral_distance']
                 cube['pos'][1] = self.portal_pos[1] - math.sin(cube['spiral_angle']) * cube['spiral_distance']
                 
-                # Shrink cube
-                cube['size'] -= 0.8 * pull_strength
+                # Shrink cube (scaled)
+                cube['size'] -= 1.6 * pull_strength
                 cube['angle'] += 8 * pull_strength
                 
-                # Remove cube when it reaches the center
-                if cube['spiral_distance'] < 5 or cube['size'] < 3:
+                # Remove cube when it reaches the center (scaled)
+                if cube['spiral_distance'] < 10 or cube['size'] < 6:
                     self.cubes.remove(cube)
             else:
                 cube['being_pulled'] = False
@@ -132,10 +149,10 @@ class PortalAnimation:
             self.portal_active = False
             return
         
-        # Draw outer glow layers
+        # Draw outer glow layers (scaled)
         for i in range(5, 0, -1):
-            glow_width = width + i * 8
-            glow_height = height + i * 8
+            glow_width = width + i * 16  # Scaled
+            glow_height = height + i * 16  # Scaled
             alpha_color = tuple(int(c * (i / 5) * 0.4) for c in self.portal_color)
             rect = pygame.Rect(
                 self.portal_pos[0] - glow_width // 2,
@@ -143,7 +160,7 @@ class PortalAnimation:
                 glow_width,
                 glow_height
             )
-            pygame.draw.ellipse(self.screen, alpha_color, rect, 3)
+            pygame.draw.ellipse(self.screen, alpha_color, rect, 6)  # Scaled border
         
         # Draw filled portal interior (dark purple/black)
         inner_rect = pygame.Rect(
@@ -154,11 +171,11 @@ class PortalAnimation:
         )
         pygame.draw.ellipse(self.screen, (30, 10, 50), inner_rect)
         
-        # Draw main portal oval border
-        pygame.draw.ellipse(self.screen, self.portal_color, inner_rect, 6)
+        # Draw main portal oval border (scaled)
+        pygame.draw.ellipse(self.screen, self.portal_color, inner_rect, 12)  # Scaled border
         
         # Draw inner swirl effect (only if portal is still open enough)
-        if height > 20:
+        if height > 40:  # Scaled threshold
             num_lines = 12
             for i in range(num_lines):
                 angle = self.rotation_angle + (i * 2 * math.pi / num_lines)
@@ -166,10 +183,10 @@ class PortalAnimation:
                 start_y = self.portal_pos[1] + math.sin(angle) * (height * 0.2)
                 end_x = self.portal_pos[0] + math.cos(angle) * (width * 0.45)
                 end_y = self.portal_pos[1] + math.sin(angle) * (height * 0.45)
-                pygame.draw.line(self.screen, self.portal_color, (start_x, start_y), (end_x, end_y), 2)
+                pygame.draw.line(self.screen, self.portal_color, (start_x, start_y), (end_x, end_y), 4)  # Scaled line width
         
         # Draw center glow (only if portal is still open enough)
-        if height > 10:
+        if height > 20:  # Scaled threshold
             center_size = min(width, height) * 0.15
             pygame.draw.ellipse(self.screen, (200, 150, 255), 
                               pygame.Rect(self.portal_pos[0] - center_size // 2,
@@ -193,8 +210,9 @@ class PortalAnimation:
                 else:
                     color = self.portal_color
                 
+                # Scaled particle size
                 pygame.draw.circle(self.screen, color, 
-                                 particle['pos'], particle['size'])
+                                 particle['pos'], particle['size'] * 2)
     
     def draw_cubes(self):
         """Draw all cubes with fade out when very close to center"""
@@ -209,9 +227,9 @@ class PortalAnimation:
             dy = self.portal_pos[1] - cy
             distance = math.sqrt(dx * dx + dy * dy)
             
-            # Fade out cube when very close to center
-            if distance < 20:
-                alpha = distance / 20.0
+            # Fade out cube when very close to center (scaled)
+            if distance < 40:  # Scaled threshold
+                alpha = distance / 40.0
                 if alpha < 0.1:
                     continue  # Don't draw if too faded
             else:
@@ -234,7 +252,7 @@ class PortalAnimation:
                 border_color = tuple(int(c * alpha) for c in (255, 255, 255))
             
             pygame.draw.polygon(self.screen, color, corners)
-            pygame.draw.polygon(self.screen, border_color, corners, 2)
+            pygame.draw.polygon(self.screen, border_color, corners, 4)  # Scaled border
     
     def close_portal(self):
         """Start portal closing animation"""
@@ -247,7 +265,12 @@ class PortalAnimation:
             self.create_portal_particles()
         
         while True:
-            self.mouse_pos = pygame.mouse.get_pos()
+            display_mouse_pos = pygame.mouse.get_pos()
+            # Scale mouse coordinates to game coordinates
+            self.mouse_pos = (
+                int((display_mouse_pos[0] - self.offset_x) / self.scale),
+                int((display_mouse_pos[1] - self.offset_y) / self.scale)
+            )
             
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -316,9 +339,20 @@ class PortalAnimation:
             
             # Draw title
             title_text = self.font.render('PORTAL ANIMATION', True, (255, 255, 255))
-            self.screen.blit(title_text, (self.width // 2 - title_text.get_width() // 2, 30))
+            self.screen.blit(title_text, (self.width // 2 - title_text.get_width() // 2, 60))
             
-
+            # Draw instructions
+            inst_font = pygame.font.Font(None, 48)
+            inst_text = inst_font.render('Click to spawn cubes | Press C to close portal | ESC to exit', True, (200, 200, 200))
+            self.screen.blit(inst_text, (self.width // 2 - inst_text.get_width() // 2, self.height - 80))
+            
+            # Scale and blit to display (centered with black bars if needed)
+            self.display_screen.fill((0, 0, 0))  # Black bars
+            scaled_surface = pygame.transform.scale(
+                self.screen,
+                (int(self.width * self.scale), int(self.height * self.scale))
+            )
+            self.display_screen.blit(scaled_surface, (self.offset_x, self.offset_y))
             
             pygame.display.flip()
             self.clock.tick(60)  # 60 FPS for smooth animation
