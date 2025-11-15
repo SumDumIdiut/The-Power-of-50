@@ -273,8 +273,28 @@ class Enemy:
 
 class TowerDefenseGame:
     def __init__(self, screen):
-        self.screen = screen
-        self.width, self.height = screen.get_size()
+        self.display_screen = screen
+        screen_width, screen_height = screen.get_size()
+        
+        # Fixed game dimensions (consistent gameplay area)
+        self.width = 1024
+        self.height = 600
+        
+        # Create a surface at fixed resolution
+        self.screen = pygame.Surface((self.width, self.height))
+        
+        # Calculate scale to fit display
+        self.scale_x = screen_width / self.width
+        self.scale_y = screen_height / self.height
+        self.scale = min(self.scale_x, self.scale_y)
+        
+        # Scaled dimensions for display
+        self.display_width = int(self.width * self.scale)
+        self.display_height = int(self.height * self.scale)
+        
+        # Center on display
+        self.offset_x = (screen_width - self.display_width) // 2
+        self.offset_y = (screen_height - self.display_height) // 2
         
         # UI dimensions
         self.side_panel_width = 200
@@ -510,6 +530,11 @@ class TowerDefenseGame:
             
             # Draw
             self.draw()
+            
+            # Scale and blit to display
+            self.display_screen.fill((0, 0, 0))  # Black bars
+            scaled_surface = pygame.transform.scale(self.screen, (self.display_width, self.display_height))
+            self.display_screen.blit(scaled_surface, (self.offset_x, self.offset_y))
             
             pygame.display.flip()
             self.clock.tick(60)
@@ -878,6 +903,11 @@ class TowerDefenseGame:
             msg_rect = msg_text.get_rect(center=(400, 300))
             self.screen.blit(msg_text, msg_rect)
             
+            # Scale and blit to display
+            self.display_screen.fill((0, 0, 0))
+            scaled_surface = pygame.transform.scale(self.screen, (self.display_width, self.display_height))
+            self.display_screen.blit(scaled_surface, (self.offset_x, self.offset_y))
+            
             pygame.display.flip()
             self.clock.tick(60)
     
@@ -900,6 +930,11 @@ class TowerDefenseGame:
             msg_text = self.font.render(f'Survived {self.wave} / {self.max_waves} waves', True, (255, 255, 255))
             msg_rect = msg_text.get_rect(center=(400, 300))
             self.screen.blit(msg_text, msg_rect)
+            
+            # Scale and blit to display
+            self.display_screen.fill((0, 0, 0))
+            scaled_surface = pygame.transform.scale(self.screen, (self.display_width, self.display_height))
+            self.display_screen.blit(scaled_surface, (self.offset_x, self.offset_y))
             
             pygame.display.flip()
             self.clock.tick(60)

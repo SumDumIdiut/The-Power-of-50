@@ -1329,12 +1329,16 @@ class ShooterGame:
             # Bullet-enemy collisions (optimized)
             bullets_to_remove = set()
             enemies_to_remove = set()
+            enemies_killed = set()  # Track which enemies dropped items
             
             for bullet in self.bullets:
                 if bullet in bullets_to_remove:
                     continue
                 
                 for enemy in self.enemies:
+                    if enemy in enemies_to_remove:
+                        continue  # Skip enemies already marked for removal
+                    
                     dx = bullet.x - enemy.x
                     dy = bullet.y - enemy.y
                     dist_sq = dx*dx + dy*dy
@@ -1355,8 +1359,9 @@ class ShooterGame:
                         else:
                             bullets_to_remove.add(bullet)
                         
-                        if enemy.health <= 0:
+                        if enemy.health <= 0 and enemy not in enemies_killed:
                             enemies_to_remove.add(enemy)
+                            enemies_killed.add(enemy)
                             
                             # Boss drops special items
                             if enemy.is_boss and not enemy.is_final:
