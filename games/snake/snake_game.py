@@ -10,8 +10,11 @@ class SnakeGame:
     def __init__(self, screen):
         self.screen = screen
         self.width, self.height = screen.get_size()
-        self.snake_size = 20
-        self.snake = [(100, 100)]
+        self.snake_size = 30  # BIGGER BLOCKS
+        # Start at grid-aligned position
+        start_x = (self.width // 2 // self.snake_size) * self.snake_size
+        start_y = (self.height // 2 // self.snake_size) * self.snake_size
+        self.snake = [(start_x, start_y)]
         self.direction = (1, 0)
         self.next_direction = (1, 0)  # Buffer for next move
         self.walls = []  # List of wall positions
@@ -148,26 +151,26 @@ class SnakeGame:
         self.draw_apple_sprite(x_pos, y_pos, size=16)
         x_pos += 25
         
-        # Draw score number
+        # Draw score number (BIGGER UI)
         score_str = str(self.score)
         for char in score_str:
-            x_pos = self.draw_pixel_char(char, x_pos, y_pos + 2, pixel_size=4, color=(255, 255, 255))
+            x_pos = self.draw_pixel_char(char, x_pos, y_pos + 2, pixel_size=6, color=(255, 255, 255))
         
-        x_pos += 3
+        x_pos += 5
         
         # Draw "/"
         pygame.draw.line(self.screen, (200, 200, 200), 
-                        (x_pos + 2, y_pos + 2), (x_pos + 8, y_pos + 18), 3)
-        x_pos += 15
+                        (x_pos + 3, y_pos + 2), (x_pos + 12, y_pos + 28), 4)
+        x_pos += 20
         
         # Draw "50"
         for char in "50":
-            x_pos = self.draw_pixel_char(char, x_pos, y_pos + 2, pixel_size=4, color=(255, 200, 100))
+            x_pos = self.draw_pixel_char(char, x_pos, y_pos + 2, pixel_size=6, color=(255, 200, 100))
     
     def run(self):
         running = True
         move_timer = 0
-        move_delay = 8  # Frames between moves (lower = faster)
+        move_delay = 5  # Frames between moves (lower = faster) - INCREASED SPEED
         
         while running:
             for event in pygame.event.get():
@@ -214,8 +217,8 @@ class SnakeGame:
                             if self.score >= 50:
                                 self.won = True
                             else:
-                                # Add 2 walls after eating apple
-                                for _ in range(2):
+                                # Add 3 walls after eating apple (MORE WALLS)
+                                for _ in range(3):
                                     self.spawn_wall_block()
                                 self.apple_pos = self.generate_apple_pos()
                         else:

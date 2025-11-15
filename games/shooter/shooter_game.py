@@ -1034,19 +1034,33 @@ class ChunkManager:
         return True
     
     def get_random_open_position(self):
-        """Get random position in open space"""
+        """Get random position in open space, away from walls"""
         tile_size = self.tilemap.tile_size
         grid_width = self.world_size // tile_size
         grid_height = self.world_size // tile_size
         
-        for _ in range(100):
-            grid_x = random.randint(5, grid_width - 5)
-            grid_y = random.randint(5, grid_height - 5)
+        for _ in range(200):  # More attempts
+            grid_x = random.randint(10, grid_width - 10)
+            grid_y = random.randint(10, grid_height - 10)
             
-            # Check if tile is NOT a wall (not in tilemap)
-            if not self.tilemap.has_tile(grid_x, grid_y):
+            # Check if tile and surrounding tiles are NOT walls
+            is_clear = True
+            for dx in range(-2, 3):  # Check 5x5 area
+                for dy in range(-2, 3):
+                    if self.tilemap.has_tile(grid_x + dx, grid_y + dy):
+                        is_clear = False
+                        break
+                if not is_clear:
+                    break
+            
+            if is_clear:
                 return (grid_x * tile_size + tile_size // 2,
                        grid_y * tile_size + tile_size // 2)
+        
+        # Fallback: use room center
+        if self.rooms:
+            room = random.choice(self.rooms)
+            return (room[0] + room[2] // 2, room[1] + room[3] // 2)
         
         return (self.world_size // 2, self.world_size // 2)
 
