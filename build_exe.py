@@ -6,6 +6,9 @@ import PyInstaller.__main__
 import os
 import sys
 
+# Force ASCII output to avoid encoding errors in CI
+os.environ['PYTHONIOENCODING'] = 'ascii'
+
 # Get the absolute path to the project directory
 project_dir = os.path.dirname(os.path.abspath(__file__))
 
