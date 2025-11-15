@@ -95,18 +95,8 @@ args = [
 print("="*60)
 print("Building The Power of 50 Executable")
 print("="*60)
-print(f"Project directory: {project_dir}")
-print("\nThis will bundle:")
-print("  - Python runtime")
-print("  - Pygame library and all dependencies")
-print("  - All game modules (snake, shooter, tower defense)")
-print("  - All assets and utilities")
-print("\nPyInstaller arguments:")
-for arg in args:
-    print(f"  {arg}")
-print("\n" + "="*60)
 print("Starting build process...")
-print("="*60 + "\n")
+print("="*60)
 
 # Run PyInstaller
 try:
@@ -123,7 +113,9 @@ except Exception as e:
     print("\n" + "="*60)
     print("BUILD FAILED!")
     print("="*60)
-    print("Error: " + str(e))
+    # Convert error to ASCII, replacing any Unicode characters
+    error_msg = str(e).encode('ascii', 'replace').decode('ascii')
+    print("Error: " + error_msg)
     print("\nTroubleshooting:")
     print("  1. Make sure PyInstaller is installed: pip install pyinstaller")
     print("  2. Make sure all dependencies are installed: pip install -r requirements.txt")
