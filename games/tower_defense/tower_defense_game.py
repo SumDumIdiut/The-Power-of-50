@@ -283,18 +283,9 @@ class TowerDefenseGame:
         # Create a surface at fixed resolution
         self.screen = pygame.Surface((self.width, self.height))
         
-        # Calculate scale to fit display
+        # Calculate scale for display (stretch to fill)
         self.scale_x = screen_width / self.width
         self.scale_y = screen_height / self.height
-        self.scale = min(self.scale_x, self.scale_y)
-        
-        # Scaled dimensions for display
-        self.display_width = int(self.width * self.scale)
-        self.display_height = int(self.height * self.scale)
-        
-        # Center on display
-        self.offset_x = (screen_width - self.display_width) // 2
-        self.offset_y = (screen_height - self.display_height) // 2
         
         # UI dimensions
         self.side_panel_width = 200
@@ -379,7 +370,10 @@ class TowerDefenseGame:
                 
                 if event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left click
-                        mouse_x, mouse_y = pygame.mouse.get_pos()
+                        display_x, display_y = pygame.mouse.get_pos()
+                        # Scale mouse coordinates to game coordinates
+                        mouse_x = int(display_x / self.scale_x)
+                        mouse_y = int(display_y / self.scale_y)
                         
                         # Check if clicking upgrade/sell buttons
                         if self.selected_tower and mouse_x > self.play_area_width:
@@ -421,7 +415,10 @@ class TowerDefenseGame:
                 
                 if event.type == pygame.MOUSEBUTTONUP:
                     if event.button == 1 and self.dragging_tower:  # Release drag
-                        mouse_x, mouse_y = pygame.mouse.get_pos()
+                        display_x, display_y = pygame.mouse.get_pos()
+                        # Scale mouse coordinates to game coordinates
+                        mouse_x = int(display_x / self.scale_x)
+                        mouse_y = int(display_y / self.scale_y)
                         if self.can_place_tower(mouse_x, mouse_y):
                             tower_costs = {'basic': 100, 'rapid': 150, 'bomb': 300, 'ice': 200}
                             cost = tower_costs[self.dragging_tower.type]
@@ -433,7 +430,10 @@ class TowerDefenseGame:
             
             # Update dragging tower position
             if self.dragging_tower:
-                mouse_x, mouse_y = pygame.mouse.get_pos()
+                display_x, display_y = pygame.mouse.get_pos()
+                # Scale mouse coordinates to game coordinates
+                mouse_x = int(display_x / self.scale_x)
+                mouse_y = int(display_y / self.scale_y)
                 self.dragging_tower.x = mouse_x
                 self.dragging_tower.y = mouse_y
             
@@ -531,10 +531,12 @@ class TowerDefenseGame:
             # Draw
             self.draw()
             
-            # Scale and blit to display
-            self.display_screen.fill((0, 0, 0))  # Black bars
-            scaled_surface = pygame.transform.scale(self.screen, (self.display_width, self.display_height))
-            self.display_screen.blit(scaled_surface, (self.offset_x, self.offset_y))
+            # Scale and blit to display (stretch to fill entire screen)
+            scaled_surface = pygame.transform.scale(
+                self.screen,
+                (int(self.width * self.scale_x), int(self.height * self.scale_y))
+            )
+            self.display_screen.blit(scaled_surface, (0, 0))
             
             pygame.display.flip()
             self.clock.tick(60)
@@ -904,9 +906,11 @@ class TowerDefenseGame:
             self.screen.blit(msg_text, msg_rect)
             
             # Scale and blit to display
-            self.display_screen.fill((0, 0, 0))
-            scaled_surface = pygame.transform.scale(self.screen, (self.display_width, self.display_height))
-            self.display_screen.blit(scaled_surface, (self.offset_x, self.offset_y))
+            scaled_surface = pygame.transform.scale(
+                self.screen,
+                (int(self.width * self.scale_x), int(self.height * self.scale_y))
+            )
+            self.display_screen.blit(scaled_surface, (0, 0))
             
             pygame.display.flip()
             self.clock.tick(60)
@@ -932,9 +936,11 @@ class TowerDefenseGame:
             self.screen.blit(msg_text, msg_rect)
             
             # Scale and blit to display
-            self.display_screen.fill((0, 0, 0))
-            scaled_surface = pygame.transform.scale(self.screen, (self.display_width, self.display_height))
-            self.display_screen.blit(scaled_surface, (self.offset_x, self.offset_y))
+            scaled_surface = pygame.transform.scale(
+                self.screen,
+                (int(self.width * self.scale_x), int(self.height * self.scale_y))
+            )
+            self.display_screen.blit(scaled_surface, (0, 0))
             
             pygame.display.flip()
             self.clock.tick(60)

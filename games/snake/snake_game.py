@@ -15,18 +15,18 @@ class SnakeGame:
         self.grid_tiles_x = 26  # Fixed number of tiles horizontally
         self.grid_tiles_y = 20  # Fixed number of tiles vertically
         
-        # Calculate tile size to fit screen (tiles scale with screen size)
-        tile_size_x = screen_width // self.grid_tiles_x
-        tile_size_y = screen_height // self.grid_tiles_y
-        self.snake_size = min(tile_size_x, tile_size_y)  # Use smaller to maintain aspect ratio
+        # Calculate tile size to fill screen completely (non-square tiles OK)
+        self.tile_width = screen_width // self.grid_tiles_x
+        self.tile_height = screen_height // self.grid_tiles_y
+        self.snake_size = self.tile_width  # Use for collision (use width as base)
         
-        # Calculate actual grid dimensions
-        self.grid_width = self.grid_tiles_x * self.snake_size
-        self.grid_height = self.grid_tiles_y * self.snake_size
+        # Grid fills entire screen
+        self.grid_width = self.grid_tiles_x * self.tile_width
+        self.grid_height = self.grid_tiles_y * self.tile_height
         
-        # Center the grid on screen
-        self.offset_x = (screen_width - self.grid_width) // 2
-        self.offset_y = (screen_height - self.grid_height) // 2
+        # No offset - fills screen
+        self.offset_x = 0
+        self.offset_y = 0
         
         # Use grid dimensions for gameplay
         self.width = self.grid_width
@@ -64,8 +64,8 @@ class SnakeGame:
     
     def generate_apple_pos(self):
         while True:
-            x = random.randint(0, (self.width // self.snake_size) - 1) * self.snake_size
-            y = random.randint(0, (self.height // self.snake_size) - 1) * self.snake_size
+            x = random.randint(0, self.grid_tiles_x - 1) * self.tile_width
+            y = random.randint(0, self.grid_tiles_y - 1) * self.tile_height
             pos = (x, y)
             if pos not in self.snake and pos not in self.walls:
                 return pos
@@ -79,8 +79,8 @@ class SnakeGame:
             last_block = segment[-1]
             
             # Try to add adjacent block (can turn corners)
-            directions = [(0, self.snake_size), (0, -self.snake_size), 
-                         (self.snake_size, 0), (-self.snake_size, 0)]
+            directions = [(0, self.tile_height), (0, -self.tile_height), 
+                         (self.tile_width, 0), (-self.tile_width, 0)]
             random.shuffle(directions)
             
             for dx, dy in directions:
@@ -98,8 +98,8 @@ class SnakeGame:
         # Start a new wall segment
         attempts = 0
         while attempts < 50:
-            x = random.randint(0, (self.width // self.snake_size) - 1) * self.snake_size
-            y = random.randint(0, (self.height // self.snake_size) - 1) * self.snake_size
+            x = random.randint(0, self.grid_tiles_x - 1) * self.tile_width
+            y = random.randint(0, self.grid_tiles_y - 1) * self.tile_height
             pos = (x, y)
             
             if (pos not in self.snake and 
@@ -111,18 +111,19 @@ class SnakeGame:
             attempts += 1
     
     def draw_apple(self):
-        ax = self.apple_pos[0] + self.offset_x
-        ay = self.apple_pos[1] + self.offset_y
+        ax = self.apple_pos[0]
+        ay = self.apple_pos[1]
+        radius = min(self.tile_width, self.tile_height) // 2
         pygame.draw.circle(self.screen, (255, 0, 0), 
-                         (ax + self.snake_size // 2, 
-                          ay + self.snake_size // 2), 
-                         self.snake_size // 2)
+                         (ax + self.tile_width // 2, 
+                          ay + self.tile_height // 2), 
+                         radius)
         pygame.draw.circle(self.screen, (255, 100, 100), 
-                         (ax + self.snake_size // 2 - 3, 
-                          ay + self.snake_size // 2 - 3), 
+                         (ax + self.tile_width // 2 - 3, 
+                          ay + self.tile_height // 2 - 3), 
                          3)
         pygame.draw.rect(self.screen, (0, 150, 0), 
-                        (ax + self.snake_size // 2 - 2, 
+                        (ax + self.tile_width // 2 - 2, 
                          ay, 4, 5))
     
     def draw_pixel_char(self, char, x, y, pixel_size=3, color=(255, 255, 255)):
@@ -225,8 +226,8 @@ class SnakeGame:
                     self.direction = self.next_direction
                     
                     head_x, head_y = self.snake[0]
-                    new_head = (head_x + self.direction[0] * self.snake_size,
-                              head_y + self.direction[1] * self.snake_size)
+                    new_head = (head_x + self.direction[0] * self.tile_width,
+                              head_y + self.direction[1] * self.tile_height)
                     
                     if (new_head[0] < 0 or new_head[0] >= self.width or
                         new_head[1] < 0 or new_head[1] >= self.height or
@@ -249,35 +250,27 @@ class SnakeGame:
             
             self.screen.fill((15, 20, 35))
             
-            # Draw subtle grid with offset
+            # Draw subtle grid
             grid_color = (25, 30, 45)
-            for x in range(0, self.width, self.snake_size):
-                pygame.draw.line(self.screen, grid_color, 
-                               (x + self.offset_x, self.offset_y), 
-                               (x + self.offset_x, self.height + self.offset_y))
-            for y in range(0, self.height, self.snake_size):
-                pygame.draw.line(self.screen, grid_color, 
-                               (self.offset_x, y + self.offset_y), 
-                               (self.width + self.offset_x, y + self.offset_y))
+            for x in range(0, self.width, self.tile_width):
+                pygame.draw.line(self.screen, grid_color, (x, 0), (x, self.height))
+            for y in range(0, self.height, self.tile_height):
+                pygame.draw.line(self.screen, grid_color, (0, y), (self.width, y))
             
-            # Draw walls with offset
+            # Draw walls
             for wall_pos in self.walls:
-                wx = wall_pos[0] + self.offset_x
-                wy = wall_pos[1] + self.offset_y
                 # Dark gray wall with stone texture
                 pygame.draw.rect(self.screen, (60, 60, 70), 
-                               (wx, wy, self.snake_size, self.snake_size))
+                               (wall_pos[0], wall_pos[1], self.tile_width, self.tile_height))
                 # Border for definition
                 pygame.draw.rect(self.screen, (80, 80, 90), 
-                               (wx, wy, self.snake_size, self.snake_size), 2)
+                               (wall_pos[0], wall_pos[1], self.tile_width, self.tile_height), 2)
                 # Inner shadow for depth
                 pygame.draw.rect(self.screen, (40, 40, 50), 
-                               (wx + 2, wy + 2, self.snake_size - 4, self.snake_size - 4), 1)
+                               (wall_pos[0] + 2, wall_pos[1] + 2, self.tile_width - 4, self.tile_height - 4), 1)
             
-            # Draw snake on grid with offset - connected segments
+            # Draw snake on grid - connected segments
             for i, segment in enumerate(self.snake):
-                sx = segment[0] + self.offset_x
-                sy = segment[1] + self.offset_y
                 # Head is bright green, body/tail darker
                 if i == 0:
                     # Bright head
@@ -291,11 +284,11 @@ class SnakeGame:
                 
                 # Draw connected segment with no gaps
                 pygame.draw.rect(self.screen, color, 
-                               (sx, sy, self.snake_size, self.snake_size))
+                               (segment[0], segment[1], self.tile_width, self.tile_height))
                 
                 # Inner highlight for depth
                 pygame.draw.rect(self.screen, inner_color, 
-                               (sx + 2, sy + 2, self.snake_size - 4, self.snake_size - 4))
+                               (segment[0] + 2, segment[1] + 2, self.tile_width - 4, self.tile_height - 4))
             
             self.draw_apple()
             self.draw_score()

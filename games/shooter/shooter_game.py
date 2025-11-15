@@ -1067,8 +1067,20 @@ class ChunkManager:
 
 class ShooterGame:
     def __init__(self, screen):
-        self.screen = screen
-        self.width, self.height = screen.get_size()
+        self.display_screen = screen
+        screen_width, screen_height = screen.get_size()
+        
+        # Fixed viewport dimensions (consistent visible area)
+        self.width = 1024
+        self.height = 600
+        
+        # Create a surface at fixed resolution
+        self.screen = pygame.Surface((self.width, self.height))
+        
+        # Calculate scale for display
+        self.scale_x = screen_width / self.width
+        self.scale_y = screen_height / self.height
+        
         self.clock = pygame.time.Clock()
         self.font = pygame.font.Font(None, 36)
         
@@ -1533,6 +1545,13 @@ class ShooterGame:
             if self.boss_active and self.current_boss:
                 self.draw_boss_pointer()
             
+            # Scale and blit to display
+            scaled_surface = pygame.transform.scale(
+                self.screen, 
+                (int(self.width * self.scale_x), int(self.height * self.scale_y))
+            )
+            self.display_screen.blit(scaled_surface, (0, 0))
+            
             pygame.display.flip()
             self.clock.tick(60)
         
@@ -1678,6 +1697,13 @@ class ShooterGame:
             msg_rect = msg_text.get_rect(center=(self.width // 2, self.height // 2 + 50))
             self.screen.blit(msg_text, msg_rect)
             
+            # Scale and blit to display
+            scaled_surface = pygame.transform.scale(
+                self.screen, 
+                (int(self.width * self.scale_x), int(self.height * self.scale_y))
+            )
+            self.display_screen.blit(scaled_surface, (0, 0))
+            
             pygame.display.flip()
             self.clock.tick(60)
     
@@ -1701,6 +1727,13 @@ class ShooterGame:
             msg_text = msg_font.render(f'Kills: {self.kills} / {self.goal}', True, (255, 255, 255))
             msg_rect = msg_text.get_rect(center=(self.width // 2, self.height // 2 + 50))
             self.screen.blit(msg_text, msg_rect)
+            
+            # Scale and blit to display
+            scaled_surface = pygame.transform.scale(
+                self.screen, 
+                (int(self.width * self.scale_x), int(self.height * self.scale_y))
+            )
+            self.display_screen.blit(scaled_surface, (0, 0))
             
             pygame.display.flip()
             self.clock.tick(60)
