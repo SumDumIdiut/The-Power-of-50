@@ -20,8 +20,9 @@ wheels/
 .installed.cfg
 *.egg
 
-# PyInstaller
-*.manifest
+# PyInstaller build artifacts
+build/
+dist/
 *.spec
 
 # Virtual Environment

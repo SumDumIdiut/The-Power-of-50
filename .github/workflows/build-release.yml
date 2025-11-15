@@ -1,0 +1,70 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v1.0.0, v1.1.0, etc.
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Build executable
+      run: python build_exe.py
+    
+    - name: Get version from tag
+      id: get_version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      shell: bash
+    
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: The Power of 50 ${{ steps.get_version.outputs.VERSION }}
+        body: |
+          ## The Power of 50 - Release ${{ steps.get_version.outputs.VERSION }}
+          
+          ### What's Included:
+          - 🐍 Snake Game
+          - 🔫 Shooter Game with Tilemap System
+          - 🗼 Tower Defense Game
+          
+          ### Download:
+          Download `ThePowerOf50.exe` below and run it - no installation required!
+          
+          ### File Size:
+          ~35 MB (includes Python runtime and all dependencies)
+          
+          ### System Requirements:
+          - Windows 10/11
+          - No additional software needed
+        draft: false
+        prerelease: false
+    
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./dist/ThePowerOf50.exe
+        asset_name: ThePowerOf50.exe
+        asset_content_type: application/vnd.microsoft.portable-executable
