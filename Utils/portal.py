@@ -8,9 +8,9 @@ class PortalAnimation:
         self.display_screen = screen
         screen_width, screen_height = screen.get_size()
         
-        # Fixed game dimensions (1920x1080)
-        self.width = 1920
-        self.height = 1080
+        # Fixed game dimensions
+        self.width = 1280
+        self.height = 720
         
         # Create a surface at fixed resolution
         self.screen = pygame.Surface((self.width, self.height))
@@ -21,16 +21,16 @@ class PortalAnimation:
         self.scale = min(scale_x, scale_y)
         
         # Calculate offset to center the game
-        self.offset_x = (screen_width - self.width * self.scale) // 2
-        self.offset_y = (screen_height - self.height * self.scale) // 2
+        self.offset_x = int((screen_width - self.width * self.scale) // 2)
+        self.offset_y = int((screen_height - self.height * self.scale) // 2)
         
         self.clock = pygame.time.Clock()
-        self.font = pygame.font.Font(None, 72)  # Scaled for 1920x1080
+        self.font = pygame.font.SysFont('segoeui', 36, bold=True)  # Scaled for 1280x720
         
-        # Portal properties (scaled for 1920x1080)
-        self.portal_pos = (960, 540)  # Center of 1920x1080
-        self.portal_width = 240  # Oval width (2x)
-        self.portal_height = 360  # Oval height (2x)
+        # Portal properties (scaled for 1280x720)
+        self.portal_pos = (640, 360)  # Center of 1280x720
+        self.portal_width = 160  # Oval width
+        self.portal_height = 240  # Oval height
         self.rotation_angle = 0
         self.portal_active = True
         self.portal_closing = False
@@ -76,7 +76,7 @@ class PortalAnimation:
         """Spawn a new cube at the given position"""
         self.cubes.append({
             'pos': list(pos),
-            'size': 80,  # Scaled for 1920x1080
+            'size': 53,  # Scaled for 1280x720
             'angle': 0,
             'being_pulled': False,
             'spiral_angle': 0,
@@ -95,12 +95,12 @@ class PortalAnimation:
             distance = math.sqrt(dx * dx + dy * dy)
             
             # Check if cube is close enough to be pulled (scaled)
-            pull_threshold = 300  # Scaled for 1920x1080
+            pull_threshold = 200  # Scaled for 1280x720
             if distance < pull_threshold and self.portal_active:
                 cube['being_pulled'] = True
                 
                 # Start closing portal when cube gets close enough
-                if distance < 160 and not self.portal_closing:
+                if distance < 107 and not self.portal_closing:
                     self.portal_closing = True
                 
                 # Calculate pull force (stronger when closer)

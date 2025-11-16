@@ -18,7 +18,8 @@ class Player:
         self.speed = 5
         self.health = 1
         self.angle = 0
-        self.shoot_direction = [0, -1]
+        self.shoot_direction = [0, -1]  # Default direction
+        self.has_target = False  # Track if we have a valid target
         self.fire_rate = 30
         self.damage = 5
         self.multi_shot = 1
@@ -27,12 +28,21 @@ class Player:
         self.has_orbital = False
         self.orbital_angle = 0
         self.has_dual_gun = False
+        # Movement spin
+        self.spin_angle = 0
+        self.is_moving = False
     
     def draw(self, screen, camera_x, camera_y):
         screen_x = self.x - camera_x
         screen_y = self.y - camera_y
         
-        angle = math.atan2(self.shoot_direction[1], self.shoot_direction[0])
+        # Point towards enemy if we have a target, otherwise point in default direction
+        if self.has_target:
+            angle = math.atan2(self.shoot_direction[1], self.shoot_direction[0])
+        else:
+            # No target - point in last known direction
+            angle = math.atan2(self.shoot_direction[1], self.shoot_direction[0])
+        
         points = [
             (screen_x + math.cos(angle) * self.size,
              screen_y + math.sin(angle) * self.size),
@@ -57,48 +67,72 @@ class Player:
     
     def move(self, keys, chunk_manager):
         new_x, new_y = self.x, self.y
+        self.is_moving = False
         
         if keys[pygame.K_w] or keys[pygame.K_UP]:
             new_y -= self.speed
+            self.is_moving = True
         if keys[pygame.K_s] or keys[pygame.K_DOWN]:
             new_y += self.speed
+            self.is_moving = True
         if keys[pygame.K_a] or keys[pygame.K_LEFT]:
             new_x -= self.speed
+            self.is_moving = True
         if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
             new_x += self.speed
+            self.is_moving = True
         
-        # Check collisions with nearby walls
-        nearby_walls = chunk_manager.get_nearby_walls(self.x, self.y)
-        can_move_x = True
-        can_move_y = True
+        # Add spin when moving
+        if self.is_moving:
+            self.spin_angle += 0.1
         
-        for wall in nearby_walls:
-            if wall.collides(new_x, self.y, self.size):
-                can_move_x = False
-            if wall.collides(self.x, new_y, self.size):
-                can_move_y = False
-        
-        if can_move_x:
-            self.x = new_x
-        if can_move_y:
-            self.y = new_y
-        
-        # Clamp player to world bounds (prevent going outside map)
-        world_size = chunk_manager.world_size
-        self.x = max(self.size, min(self.x, world_size - self.size))
-        self.y = max(self.size, min(self.y, world_size - self.size))
+        # Only check collisions if player actually moved
+        if new_x != self.x or new_y != self.y:
+            nearby_walls = chunk_manager.get_nearby_walls(self.x, self.y)
+            can_move_x = new_x == self.x
+            can_move_y = new_y == self.y
+            
+            if not can_move_x:
+                can_move_x = True
+                for wall in nearby_walls:
+                    if wall.collides(new_x, self.y, self.size):
+                        can_move_x = False
+                        break
+            
+            if not can_move_y:
+                can_move_y = True
+                for wall in nearby_walls:
+                    if wall.collides(self.x, new_y, self.size):
+                        can_move_y = False
+                        break
+            
+            if can_move_x:
+                self.x = new_x
+            if can_move_y:
+                self.y = new_y
+            
+            # Clamp player to world bounds
+            world_size = chunk_manager.world_size
+            self.x = max(self.size, min(self.x, world_size - self.size))
+            self.y = max(self.size, min(self.y, world_size - self.size))
     
-    def update_aim(self, enemies, chunk_manager):
-        # Auto-aim at nearest visible enemy
+    def update_aim(self, enemies, chunk_manager, camera_x, camera_y, screen_width, screen_height):
+        # Auto-aim at nearest enemy (optimized - avoid sqrt)
+        if not enemies:
+            self.has_target = False
+            return
+        
         nearest = None
-        min_dist = float('inf')
+        min_dist_sq = float('inf')
         
         for enemy in enemies:
-            if chunk_manager.has_line_of_sight(self.x, self.y, enemy.x, enemy.y):
-                dist = math.sqrt((enemy.x - self.x)**2 + (enemy.y - self.y)**2)
-                if dist < min_dist:
-                    min_dist = dist
-                    nearest = enemy
+            dx = enemy.x - self.x
+            dy = enemy.y - self.y
+            dist_sq = dx*dx + dy*dy
+            
+            if dist_sq < min_dist_sq:
+                min_dist_sq = dist_sq
+                nearest = enemy
         
         if nearest:
             dx = nearest.x - self.x
@@ -106,6 +140,9 @@ class Player:
             length = math.sqrt(dx*dx + dy*dy)
             if length > 0:
                 self.shoot_direction = [dx/length, dy/length]
+                self.has_target = True
+        else:
+            self.has_target = False
     
     def get_fire_rate_percent(self):
         """Get fire rate as percentage (lower cooldown = higher rate)"""
@@ -147,6 +184,8 @@ class Player:
 
 
 class Bullet:
+    __slots__ = ('x', 'y', 'direction', 'speed', 'size', 'damage', 'bounces_left', 'max_bounces', 'lifetime', 'last_bounce_frame')
+    
     def __init__(self, x, y, direction, damage=10, bounces=0):
         self.x = x
         self.y = y
@@ -219,7 +258,7 @@ class Popup:
         screen_x = self.x - camera_x
         screen_y = self.y - camera_y
         
-        font = pygame.font.Font(None, 32)
+        font = pygame.font.SysFont('segoeui', 24, bold=True)
         text_surf = font.render(self.text, True, self.color)
         text_surf.set_alpha(self.alpha)
         
@@ -272,6 +311,14 @@ class Enemy:
         self.attack_pattern = 0
         self.pattern_timer = 0
         self.minion_spawn_timer = 0
+        
+        # Unload tracking (enemies far from player for too long get removed)
+        self.frames_far_from_player = 0
+        self.unload_distance_sq = 3000 * 3000  # 3000 pixels away
+        self.unload_delay = 600  # 10 seconds at 60fps
+        
+        # Cached line of sight (updated every 10 frames for performance)
+        self.cached_los = True
     
     def update(self, player_x, player_y, chunk_manager, has_los):
         # Bosses always move, regular enemies only move if they see player
@@ -280,9 +327,10 @@ class Enemy:
         
         dx = player_x - self.x
         dy = player_y - self.y
-        dist = math.sqrt(dx * dx + dy * dy)
+        dist_sq = dx * dx + dy * dy
         
-        if dist > 0:
+        if dist_sq > 0:
+            dist = math.sqrt(dist_sq)
             new_x = self.x + (dx / dist) * self.speed
             new_y = self.y + (dy / dist) * self.speed
             
@@ -313,39 +361,49 @@ class Enemy:
     
     def push_out_of_walls(self, chunk_manager):
         """Push enemy out of walls if spawned inside"""
+        # Check if enemy is in a wall (check full wall area, not just collision planes)
         nearby_walls = chunk_manager.get_nearby_walls(self.x, self.y)
         
+        is_in_wall = False
         for wall in nearby_walls:
-            if wall.collides(self.x, self.y, self.size):
-                # Try pushing in 8 directions
-                directions = [
-                    (1, 0), (-1, 0), (0, 1), (0, -1),
-                    (1, 1), (-1, 1), (1, -1), (-1, -1)
-                ]
+            # Check if inside the full wall tile area
+            if (self.x > wall.x - self.size and self.x < wall.x + wall.width + self.size and
+                self.y > wall.y - self.size and self.y < wall.y + wall.height + self.size):
+                is_in_wall = True
+                break
+        
+        if not is_in_wall:
+            return  # Already in open space
+        
+        # Try pushing in 8 directions
+        directions = [
+            (1, 0), (-1, 0), (0, 1), (0, -1),
+            (1, 1), (-1, 1), (1, -1), (-1, -1)
+        ]
+        
+        for dx, dy in directions:
+            for push_distance in range(5, 300, 5):  # Try distances from 5 to 300
+                test_x = self.x + dx * push_distance
+                test_y = self.y + dy * push_distance
                 
-                for dx, dy in directions:
-                    push_distance = 0
-                    max_push = 200
-                    
-                    while push_distance < max_push:
-                        push_distance += 5
-                        test_x = self.x + dx * push_distance
-                        test_y = self.y + dy * push_distance
-                        
-                        # Check if this position is clear
-                        is_clear = True
-                        for check_wall in nearby_walls:
-                            if check_wall.collides(test_x, test_y, self.size):
-                                is_clear = False
-                                break
-                        
-                        if is_clear:
-                            self.x = test_x
-                            self.y = test_y
-                            return
+                # Get walls at test position
+                test_walls = chunk_manager.get_nearby_walls(test_x, test_y)
                 
-                # If no direction works, teleport to random open position
-                self.x, self.y = chunk_manager.get_random_open_position()
+                # Check if this position is clear (check full wall area)
+                is_clear = True
+                for check_wall in test_walls:
+                    if (test_x > check_wall.x - self.size and test_x < check_wall.x + check_wall.width + self.size and
+                        test_y > check_wall.y - self.size and test_y < check_wall.y + check_wall.height + self.size):
+                        is_clear = False
+                        break
+                
+                if is_clear:
+                    self.x = test_x
+                    self.y = test_y
+                    return
+        
+        # If no direction works, teleport to random open position
+        self.x, self.y = chunk_manager.get_random_open_position()
     
     def can_shoot(self):
         return (self.is_boss or self.enemy_type == 'shooter') and self.shoot_cooldown == 0
@@ -356,11 +414,12 @@ class Enemy:
         
         dx = player_x - self.x
         dy = player_y - self.y
-        dist = math.sqrt(dx * dx + dy * dy)
+        dist_sq = dx * dx + dy * dy
         
-        if dist == 0:
+        if dist_sq == 0:
             return bullets
         
+        dist = math.sqrt(dist_sq)
         direction = [dx / dist, dy / dist]
         angle_to_player = math.atan2(direction[1], direction[0])
         
@@ -523,6 +582,8 @@ class Enemy:
 
 
 class EnemyBullet:
+    __slots__ = ('x', 'y', 'direction', 'speed', 'size')
+    
     def __init__(self, x, y, direction):
         self.x = x
         self.y = y
@@ -607,7 +668,7 @@ class Item:
             pygame.draw.lines(screen, (255, 255, 255), False, points, 2)
         
         # Draw description text below item
-        desc_font = pygame.font.Font(None, 20)
+        desc_font = pygame.font.SysFont('segoeui', 16, bold=True)
         desc = self.descriptions.get(self.type, '')
         desc_text = desc_font.render(desc, True, (255, 255, 255))
         desc_rect = desc_text.get_rect(center=(screen_x, screen_y + self.size + 12))
@@ -642,43 +703,38 @@ class Wall:
         self.has_right = has_right
         self.has_top = has_top
         self.has_bottom = has_bottom
-        self.center_x = x + width / 2
-        self.center_y = y + height / 2
+        
+        # Pre-calculate collision plane bounds (lightweight, no list creation)
+        self.plane_thickness = 5
+        
+        # Store bounds directly for faster collision checks
+        self.left_plane = (x - self.plane_thickness, y, self.plane_thickness, height) if not has_left else None
+        self.right_plane = (x + width, y, self.plane_thickness, height) if not has_right else None
+        self.top_plane = (x, y - self.plane_thickness, width, self.plane_thickness) if not has_top else None
+        self.bottom_plane = (x, y + height, width, self.plane_thickness) if not has_bottom else None
 
     def collides(self, x, y, size):
-        # Basic bounds check
-        if not (
-            self.x < x + size
-            and self.x + self.width > x - size
-            and self.y < y + size
-            and self.y + self.height > y - size
-        ):
-            return False
-
-        # Check collision based on which side and if that side is exposed
-        collision_margin = size + 2
-
-        # Check left side
-        if x < self.center_x and abs(x - self.x) < collision_margin:
-            if not self.has_left:  # Only collide if no neighbor on left
+        # Check collision against each plane (optimized with direct tuple access)
+        if self.left_plane:
+            px, py, pw, ph = self.left_plane
+            if px < x + size and px + pw > x - size and py < y + size and py + ph > y - size:
                 return True
-
-        # Check right side
-        if x > self.center_x and abs(x - (self.x + self.width)) < collision_margin:
-            if not self.has_right:  # Only collide if no neighbor on right
+        
+        if self.right_plane:
+            px, py, pw, ph = self.right_plane
+            if px < x + size and px + pw > x - size and py < y + size and py + ph > y - size:
                 return True
-
-        # Check top side
-        if y < self.center_y and abs(y - self.y) < collision_margin:
-            if not self.has_top:  # Only collide if no neighbor on top
+        
+        if self.top_plane:
+            px, py, pw, ph = self.top_plane
+            if px < x + size and px + pw > x - size and py < y + size and py + ph > y - size:
                 return True
-
-        # Check bottom side
-        if y > self.center_y and abs(y - (self.y + self.height)) < collision_margin:
-            if not self.has_bottom:  # Only collide if no neighbor on bottom
+        
+        if self.bottom_plane:
+            px, py, pw, ph = self.bottom_plane
+            if px < x + size and px + pw > x - size and py < y + size and py + ph > y - size:
                 return True
-
-        # No collision on sides with neighbors
+        
         return False
     
     def is_visible(self, camera_x, camera_y, screen_width, screen_height):
@@ -688,7 +744,38 @@ class Wall:
         return (screen_x + self.width > -buffer and screen_x < screen_width + buffer and
                 screen_y + self.height > -buffer and screen_y < screen_height + buffer)
     
-    # Drawing is now handled by WallRenderer
+    def draw_collision_outline(self, screen, camera_x, camera_y):
+        """Draw black collision outline"""
+        screen_x = self.x - camera_x
+        screen_y = self.y - camera_y
+        
+        # Draw thicker black lines for collision planes
+        line_color = (0, 0, 0)
+        line_width = 4
+        
+        if self.left_plane:
+            px, py, pw, ph = self.left_plane
+            sx = px - camera_x + pw
+            sy = py - camera_y
+            pygame.draw.line(screen, line_color, (sx, sy), (sx, sy + ph), line_width)
+        
+        if self.right_plane:
+            px, py, pw, ph = self.right_plane
+            sx = px - camera_x
+            sy = py - camera_y
+            pygame.draw.line(screen, line_color, (sx, sy), (sx, sy + ph), line_width)
+        
+        if self.top_plane:
+            px, py, pw, ph = self.top_plane
+            sx = px - camera_x
+            sy = py - camera_y + ph
+            pygame.draw.line(screen, line_color, (sx, sy), (sx + pw, sy), line_width)
+        
+        if self.bottom_plane:
+            px, py, pw, ph = self.bottom_plane
+            sx = px - camera_x
+            sy = py - camera_y
+            pygame.draw.line(screen, line_color, (sx, sy), (sx + pw, sy), line_width)
 
 
 class ChunkManager:
@@ -700,6 +787,9 @@ class ChunkManager:
         self.loaded_chunks = set()
         self.tilemap = Tilemap(tile_size=40)
         self.rooms = []
+        
+        # No-spawn zone tracking (set of grid coordinates where enemies can't spawn)
+        self.no_spawn_zones = set()
     
     def generate_map(self):
         """Generate open dungeon layout using tilemap system"""
@@ -712,28 +802,28 @@ class ChunkManager:
             for y in range(grid_height):
                 self.tilemap.place_tile(x, y, update=False)
         
-        # Create large open rooms
+        # Create large open rooms (more rooms, less spacing for more open feel)
         rooms = []
         center_x, center_y = grid_width // 2, grid_height // 2
-        start_room = (center_x - 25, center_y - 25, 50, 50)  # Larger starting room
+        start_room = (center_x - 30, center_y - 30, 60, 60)  # Even larger starting room
         rooms.append(start_room)
         
-        # Generate 20 large rooms with minimum 6 tile spacing
-        for _ in range(20):
+        # Generate 30 large rooms with minimum 4 tile spacing (more open)
+        for _ in range(30):
             for attempt in range(50):
-                w = random.randint(25, 45)  # Much larger rooms
-                h = random.randint(25, 45)
+                w = random.randint(30, 50)  # Even larger rooms
+                h = random.randint(30, 50)
                 x = random.randint(5, grid_width - w - 5)
                 y = random.randint(5, grid_height - h - 5)
                 
                 overlap = False
                 for rx, ry, rw, rh in rooms:
-                    # Minimum 6 tiles padding for 3-tile thick walls
+                    # Minimum 4 tiles padding (reduced for more open map)
                     if not (
-                        x + w + 6 < rx
-                        or x - 6 > rx + rw
-                        or y + h + 6 < ry
-                        or y - 6 > ry + rh
+                        x + w + 4 < rx
+                        or x - 4 > rx + rw
+                        or y + h + 4 < ry
+                        or y - 4 > ry + rh
                     ):
                         overlap = True
                         break
@@ -756,26 +846,29 @@ class ChunkManager:
                     if 0 <= rx < grid_width and 0 <= ry < grid_height:
                         self.tilemap.remove_tile(rx, ry, update=False)
         
-        # Connect rooms with wide corridors
+        # Connect rooms with very wide corridors
         for i in range(len(rooms) - 1):
-            self.connect_rooms(rooms[i], rooms[i + 1], 12)  # Wider corridors
+            self.connect_rooms(rooms[i], rooms[i + 1], 15)  # Even wider corridors
         
-        # Add many extra connections for more open feel
-        for _ in range(len(rooms) // 2):  # More connections
+        # Add many extra connections for very open feel
+        for _ in range(len(rooms)):  # More connections (was len(rooms)//2)
             i, j = random.randint(0, len(rooms) - 1), random.randint(
                 0, len(rooms) - 1
             )
             if i != j:
-                self.connect_rooms(rooms[i], rooms[j], 12)
+                self.connect_rooms(rooms[i], rooms[j], 15)
         
-        # Enforce minimum 3-tile wall thickness
-        self.enforce_minimum_wall_thickness(grid_width, grid_height, 3)
+        # Enforce minimum 1-tile wall thickness (more walls, thinner)
+        self.enforce_minimum_wall_thickness(grid_width, grid_height, 1)
         
         # NOW update tiles once at the end
         self.tilemap.update_tiles()
         
         # Convert tilemap to wall objects
         self.build_walls_from_tilemap()
+        
+        # Generate no-spawn zones from all wall tiles
+        self.generate_no_spawn_zones()
     
     def enforce_minimum_wall_thickness(self, grid_width, grid_height, min_thickness):
         """Remove thin walls by expanding open spaces"""
@@ -855,12 +948,12 @@ class ChunkManager:
                     self.tilemap.remove_tile(cx2 + w, y, update=False)
     
     def build_walls_from_tilemap(self):
-        """Convert tilemap to merged collision rectangles for performance"""
+        """Convert tilemap to smaller collision rectangles (prioritize smaller objects)"""
         tile_size = self.tilemap.tile_size
         all_tiles = self.tilemap.get_all_tiles()
         visited = set()
 
-        # Merge adjacent tiles with same neighbor pattern into larger rectangles
+        # Create smaller wall objects - limit merging to max 3x3 tiles
         for (gx, gy) in all_tiles:
             if (gx, gy) in visited:
                 continue
@@ -872,9 +965,10 @@ class ChunkManager:
             has_bottom = self.tilemap.has_tile(gx, gy + 1)
             pattern = (has_left, has_right, has_top, has_bottom)
 
-            # Try to expand horizontally first
+            # Try to expand horizontally first (limited to 3 tiles max)
             width = 1
-            while (gx + width, gy) not in visited and self.tilemap.has_tile(
+            max_width = 3  # Limit horizontal merging
+            while width < max_width and (gx + width, gy) not in visited and self.tilemap.has_tile(
                 gx + width, gy
             ):
                 # Check if neighbor pattern matches
@@ -889,10 +983,11 @@ class ChunkManager:
                 else:
                     break
 
-            # Try to expand vertically
+            # Try to expand vertically (limited to 3 tiles max)
             height = 1
+            max_height = 3  # Limit vertical merging
             can_expand_down = True
-            while can_expand_down:
+            while can_expand_down and height < max_height:
                 # Check if entire row can be added
                 for dx in range(width):
                     if (gx + dx, gy + height) in visited or not self.tilemap.has_tile(
@@ -932,6 +1027,59 @@ class ChunkManager:
                 has_bottom=has_bottom,
             )
             self.all_walls.append(wall)
+    
+    def generate_no_spawn_zones(self):
+        """Generate no-spawn zones from all wall tiles and their full areas"""
+        tile_size = self.tilemap.tile_size
+        
+        # Mark all wall tiles as no-spawn zones
+        for (gx, gy) in self.tilemap.get_all_tiles():
+            self.no_spawn_zones.add((gx, gy))
+        
+        # Also mark tiles covered by wall collision areas
+        for wall in self.all_walls:
+            # Calculate which tiles this wall covers
+            start_x = int(wall.x // tile_size)
+            start_y = int(wall.y // tile_size)
+            end_x = int((wall.x + wall.width) // tile_size) + 1
+            end_y = int((wall.y + wall.height) // tile_size) + 1
+            
+            for gx in range(start_x, end_x):
+                for gy in range(start_y, end_y):
+                    self.no_spawn_zones.add((gx, gy))
+        
+        print(f"Generated {len(self.no_spawn_zones)} no-spawn zone tiles")
+    
+    def draw_no_spawn_zones(self, screen, camera_x, camera_y, screen_width, screen_height):
+        """Draw no-spawn zones as semi-transparent white overlays"""
+        tile_size = self.tilemap.tile_size
+        
+        # Calculate visible tile range
+        start_x = max(0, int(camera_x // tile_size) - 1)
+        start_y = max(0, int(camera_y // tile_size) - 1)
+        end_x = int((camera_x + screen_width) // tile_size) + 2
+        end_y = int((camera_y + screen_height) // tile_size) + 2
+        
+        # Create semi-transparent white surface
+        overlay = pygame.Surface((tile_size, tile_size), pygame.SRCALPHA)
+        overlay.fill((255, 255, 255, 60))  # White with 60/255 opacity (~23%)
+        
+        # Draw no-spawn zones
+        for gx in range(start_x, end_x):
+            for gy in range(start_y, end_y):
+                if (gx, gy) in self.no_spawn_zones:
+                    screen_x = int(gx * tile_size - camera_x)
+                    screen_y = int(gy * tile_size - camera_y)
+                    screen.blit(overlay, (screen_x, screen_y))
+    
+    def is_spawn_safe(self, grid_x, grid_y, safety_radius=3):
+        """Check if a grid position is safe for spawning (not in no-spawn zone)"""
+        # Check the position and surrounding tiles
+        for dx in range(-safety_radius, safety_radius + 1):
+            for dy in range(-safety_radius, safety_radius + 1):
+                if (grid_x + dx, grid_y + dy) in self.no_spawn_zones:
+                    return False
+        return True
     
     def load_chunks_around(self, x, y):
         """Load chunks around position"""
@@ -999,65 +1147,87 @@ class ChunkManager:
         return visible
     
     def get_nearby_walls(self, x, y):
-        """Get walls near position"""
+        """Get walls near position (optimized)"""
         chunk_x = int(x // self.chunk_size)
         chunk_y = int(y // self.chunk_size)
         
-        nearby = set()
+        nearby = []
+        seen = set()
         for cx in range(chunk_x - 1, chunk_x + 2):
             for cy in range(chunk_y - 1, chunk_y + 2):
                 chunk_key = (cx, cy)
                 if chunk_key in self.wall_chunks:
-                    nearby.update(self.wall_chunks[chunk_key])
-        return list(nearby)
+                    for wall in self.wall_chunks[chunk_key]:
+                        wall_id = id(wall)
+                        if wall_id not in seen:
+                            nearby.append(wall)
+                            seen.add(wall_id)
+        return nearby
     
     def has_line_of_sight(self, x1, y1, x2, y2):
-        """Check line of sight between two points"""
+        """Check line of sight between two points (optimized)"""
         dx = x2 - x1
         dy = y2 - y1
-        distance = math.sqrt(dx * dx + dy * dy)
+        dist_sq = dx * dx + dy * dy
         
-        if distance == 0:
+        if dist_sq == 0:
             return True
         
-        nearby_walls = self.get_nearby_walls((x1 + x2) / 2, (y1 + y2) / 2)
-        steps = int(distance / 25)
+        distance = math.sqrt(dist_sq)
+        nearby_walls = self.get_nearby_walls((x1 + x2) * 0.5, (y1 + y2) * 0.5)
+        
+        if not nearby_walls:
+            return True
+        
+        # Check fewer points for better performance (every 15 pixels)
+        steps = max(int(distance / 15), 3)
+        step_size = 1.0 / steps
         
         for i in range(1, steps):
-            t = i / steps
+            t = i * step_size
             check_x = x1 + dx * t
             check_y = y1 + dy * t
             
             for wall in nearby_walls:
-                if wall.collides(check_x, check_y, 3):
+                if wall.collides(check_x, check_y, 5):
                     return False
         return True
     
     def get_random_open_position(self):
-        """Get random position in open space, away from walls"""
+        """Get random position in open space, away from walls (using no-spawn zones)"""
         tile_size = self.tilemap.tile_size
         grid_width = self.world_size // tile_size
         grid_height = self.world_size // tile_size
         
-        for _ in range(200):  # More attempts
+        # Ensure no-spawn zones are generated
+        if not self.no_spawn_zones:
+            print("WARNING: No-spawn zones not generated!")
+            return (self.world_size // 2, self.world_size // 2)
+        
+        for attempt in range(500):  # Increased attempts
             grid_x = random.randint(10, grid_width - 10)
             grid_y = random.randint(10, grid_height - 10)
             
-            # Check if tile and surrounding tiles are NOT walls
-            is_clear = True
-            for dx in range(-2, 3):  # Check 5x5 area
-                for dy in range(-2, 3):
-                    if self.tilemap.has_tile(grid_x + dx, grid_y + dy):
-                        is_clear = False
-                        break
-                if not is_clear:
-                    break
-            
-            if is_clear:
-                return (grid_x * tile_size + tile_size // 2,
-                       grid_y * tile_size + tile_size // 2)
+            # Use pre-generated no-spawn zones for instant checking
+            if self.is_spawn_safe(grid_x, grid_y, safety_radius=3):
+                # Calculate world position (center of tile)
+                world_x = grid_x * tile_size + tile_size // 2
+                world_y = grid_y * tile_size + tile_size // 2
+                return (world_x, world_y)
         
-        # Fallback: use room center
+        # If we couldn't find a safe spot, try with smaller safety radius
+        print(f"WARNING: Could not find safe spawn after 500 attempts, trying smaller radius")
+        for attempt in range(500):
+            grid_x = random.randint(10, grid_width - 10)
+            grid_y = random.randint(10, grid_height - 10)
+            
+            if self.is_spawn_safe(grid_x, grid_y, safety_radius=1):
+                world_x = grid_x * tile_size + tile_size // 2
+                world_y = grid_y * tile_size + tile_size // 2
+                return (world_x, world_y)
+        
+        # Last resort: use room center
+        print("WARNING: Using fallback room center spawn")
         if self.rooms:
             room = random.choice(self.rooms)
             return (room[0] + room[2] // 2, room[1] + room[3] // 2)
@@ -1070,22 +1240,29 @@ class ShooterGame:
         self.display_screen = screen
         screen_width, screen_height = screen.get_size()
         
-        # Fixed viewport dimensions (consistent visible area) - ZOOMED OUT
-        self.width = 1920
-        self.height = 1080
+        # Fixed viewport dimensions (consistent visible area) - zoomed out
+        self.width = 1600
+        self.height = 900
         
         # Create a surface at fixed resolution
         self.screen = pygame.Surface((self.width, self.height))
         
-        # Calculate scale for display
-        self.scale_x = screen_width / self.width
-        self.scale_y = screen_height / self.height
+        # Calculate scale to fit display (maintain aspect ratio)
+        scale_x = screen_width / self.width
+        scale_y = screen_height / self.height
+        self.scale = min(scale_x, scale_y)
+        
+        # Calculate offset to center the game
+        self.offset_x = int((screen_width - self.width * self.scale) // 2)
+        self.offset_y = int((screen_height - self.height * self.scale) // 2)
         
         self.clock = pygame.time.Clock()
-        self.font = pygame.font.Font(None, 36)
+        # Use smooth antialiased font
+        self.font = pygame.font.SysFont('segoeui', 28, bold=True)
+        self.font.set_bold(True)
         
         # World setup
-        self.world_size = 12000  # 2x bigger map (more reasonable)
+        self.world_size = 18000  # Larger map for more exploration
         self.chunk_manager = ChunkManager(self.world_size)
         self.chunk_manager.generate_map()
         
@@ -1117,6 +1294,10 @@ class ShooterGame:
         self.boss_active = False
         self.current_boss = None
         self.frame_count = 0
+        
+        # Gradual initial enemy spawning (spawn over time instead of all at once)
+        self.initial_enemies_to_spawn = 8
+        self.initial_spawn_timer = 0
     
     def spawn_enemy(self):
         """Spawn enemy off-screen or boss in room"""
@@ -1214,18 +1395,20 @@ class ShooterGame:
             
             # Update player
             self.player.move(keys, self.chunk_manager)
-            self.player.update_aim(self.enemies, self.chunk_manager)
+            self.player.update_aim(self.enemies, self.chunk_manager, self.camera_x, self.camera_y, self.width, self.height)
             
-            # Auto-shoot
+            # Auto-shoot (always aim at enemies, not spin direction)
             if self.shoot_cooldown == 0:
                 shots_to_fire = 2 if self.player.has_dual_gun else 1
                 
                 for shot in range(shots_to_fire):
                     if self.player.multi_shot == 1:
+                        # Single shot at enemy
                         self.bullets.append(Bullet(self.player.x, self.player.y,
                                                   self.player.shoot_direction,
                                                   self.player.damage, self.player.bullet_bounce))
                     else:
+                        # Multi-shot spread at enemy
                         spread_angle = 0.3
                         for i in range(self.player.multi_shot):
                             offset = (i - (self.player.multi_shot - 1) / 2) * spread_angle
@@ -1245,21 +1428,31 @@ class ShooterGame:
                 self.boss_active = False
                 self.current_boss = None
             
-            # Spawn enemies
-            if not self.boss_active:
+            # Gradual initial enemy spawning
+            if self.initial_enemies_to_spawn > 0:
+                self.initial_spawn_timer += 1
+                if self.initial_spawn_timer > 10:  # Spawn one every 10 frames
+                    self.spawn_enemy()
+                    self.initial_enemies_to_spawn -= 1
+                    self.initial_spawn_timer = 0
+            
+            # Spawn enemies (even faster spawn rate)
+            if not self.boss_active and self.initial_enemies_to_spawn <= 0:
                 self.spawn_timer += 1
-                spawn_delay = max(60, 300 - (self.kills * 5))
-                max_enemies = min(20, 10 + self.kills // 2)  # Reduced max enemies
+                spawn_delay = max(30, 150 - (self.kills * 5))  # Optimized spawn rate
+                max_enemies = min(25, 15 + self.kills // 2)  # Reduced from 40 to 25 max
                 
                 if self.spawn_timer > spawn_delay and len(self.enemies) < max_enemies:
                     self.spawn_enemy()
                     self.spawn_timer = 0
             
-            # Update bullets (optimized)
-            if len(self.bullets) > 100:  # Further reduced limit
-                self.bullets = self.bullets[-100:]
+            # Update bullets (optimized with cached wall lookups) - HARD LIMIT
+            if len(self.bullets) > 150:
+                self.bullets = self.bullets[-150:]  # Reduced from 200 to 150
             
             bullets_to_remove = []
+            world_size = self.world_size
+            
             for bullet in self.bullets:
                 bullet.update()
                 
@@ -1269,24 +1462,25 @@ class ShooterGame:
                     continue
                 
                 # Remove out of bounds bullets
-                if (bullet.x < 0 or bullet.x > self.world_size or
-                    bullet.y < 0 or bullet.y > self.world_size):
+                if (bullet.x < 0 or bullet.x > world_size or
+                    bullet.y < 0 or bullet.y > world_size):
                     bullets_to_remove.append(bullet)
                     continue
                 
                 # Check wall collisions only for nearby walls
                 nearby_walls = self.chunk_manager.get_nearby_walls(bullet.x, bullet.y)
-                for wall in nearby_walls:
-                    if wall.collides(bullet.x, bullet.y, bullet.size):
-                        if bullet.bounces_left > 0:
-                            if bullet.bounce(wall, self.frame_count):
-                                # Move bullet away from wall
-                                bullet.x += bullet.direction[0] * bullet.speed * 2
-                                bullet.y += bullet.direction[1] * bullet.speed * 2
-                            break
-                        else:
-                            bullets_to_remove.append(bullet)
-                            break
+                if nearby_walls:
+                    for wall in nearby_walls:
+                        if wall.collides(bullet.x, bullet.y, bullet.size):
+                            if bullet.bounces_left > 0:
+                                if bullet.bounce(wall, self.frame_count):
+                                    # Move bullet away from wall
+                                    bullet.x += bullet.direction[0] * bullet.speed * 2
+                                    bullet.y += bullet.direction[1] * bullet.speed * 2
+                                break
+                            else:
+                                bullets_to_remove.append(bullet)
+                                break
             
             # Batch remove bullets
             self.bullets = [b for b in self.bullets if b not in bullets_to_remove]
@@ -1294,14 +1488,35 @@ class ShooterGame:
             # Update player orbital
             self.player.update_orbital()
             
-            # Update enemies
+            # Update enemies (optimized with squared distances)
+            player_x, player_y = self.player.x, self.player.y
+            player_size = self.player.size
+            enemies_to_unload = []
+            
             for enemy in self.enemies[:]:
-                has_los = self.chunk_manager.has_line_of_sight(enemy.x, enemy.y,
-                                                               self.player.x, self.player.y)
-                enemy.update(self.player.x, self.player.y, self.chunk_manager, has_los)
+                # Calculate distance to player
+                dx = enemy.x - player_x
+                dy = enemy.y - player_y
+                dist_sq = dx*dx + dy*dy
+                
+                # Track if enemy is far from player (for unloading)
+                if not enemy.is_boss and dist_sq > enemy.unload_distance_sq:
+                    enemy.frames_far_from_player += 1
+                    if enemy.frames_far_from_player > enemy.unload_delay:
+                        enemies_to_unload.append(enemy)
+                        continue
+                else:
+                    enemy.frames_far_from_player = 0
+                
+                # Only check line of sight every 10 frames for non-bosses (huge optimization)
+                if enemy.is_boss or self.frame_count % 10 == 0:
+                    enemy.cached_los = self.chunk_manager.has_line_of_sight(enemy.x, enemy.y, player_x, player_y)
+                has_los = getattr(enemy, 'cached_los', True)
+                
+                enemy.update(player_x, player_y, self.chunk_manager, has_los)
                 
                 if enemy.can_shoot() and has_los:
-                    self.enemy_bullets.extend(enemy.shoot(self.player.x, self.player.y))
+                    self.enemy_bullets.extend(enemy.shoot(player_x, player_y))
                 
                 # Final boss spawns minions
                 if enemy.is_final and len(self.enemies) < 10:
@@ -1317,26 +1532,32 @@ class ShooterGame:
                         minion.push_out_of_walls(self.chunk_manager)
                         self.enemies.append(minion)
                 
-                # Check player collision
-                dist = math.sqrt((enemy.x - self.player.x)**2 + (enemy.y - self.player.y)**2)
-                if dist < self.player.size + enemy.size:
+                # Check player collision (use already calculated squared distance)
+                collision_dist = player_size + enemy.size
+                if dist_sq < collision_dist * collision_dist:
                     self.player.health = 0
                     if enemy in self.enemies:
                         self.enemies.remove(enemy)
                 
-                # Check orbital weapon collision (optimized - only check nearby enemies)
-                if self.player.has_orbital:
-                    player_dist = math.sqrt((enemy.x - self.player.x)**2 + (enemy.y - self.player.y)**2)
-                    if player_dist < 80:  # Only check if enemy is near player
-                        for i in range(3):
-                            angle = self.player.orbital_angle + (i * math.pi * 2 / 3)
-                            orbit_radius = 50
-                            saw_x = self.player.x + math.cos(angle) * orbit_radius
-                            saw_y = self.player.y + math.sin(angle) * orbit_radius
-                            
-                            dist = math.sqrt((saw_x - enemy.x)**2 + (saw_y - enemy.y)**2)
-                            if dist < 12 + enemy.size:
-                                enemy.health -= 1  # Increased damage, less frequent checks
+                # Check orbital weapon collision (only every 3 frames for performance)
+                if self.player.has_orbital and dist_sq < 6400 and self.frame_count % 3 == 0:
+                    for i in range(3):
+                        angle = self.player.orbital_angle + (i * math.pi * 2 / 3)
+                        orbit_radius = 50
+                        saw_x = player_x + math.cos(angle) * orbit_radius
+                        saw_y = player_y + math.sin(angle) * orbit_radius
+                        
+                        sdx = saw_x - enemy.x
+                        sdy = saw_y - enemy.y
+                        saw_dist_sq = sdx*sdx + sdy*sdy
+                        saw_collision = 12 + enemy.size
+                        if saw_dist_sq < saw_collision * saw_collision:
+                            enemy.health -= 3  # Increased damage to compensate for less frequent checks
+            
+            # Remove enemies that are too far away for too long (unload)
+            for enemy in enemies_to_unload:
+                if enemy in self.enemies:
+                    self.enemies.remove(enemy)
             
             # Bullet-enemy collisions (optimized)
             bullets_to_remove = set()
@@ -1396,11 +1617,13 @@ class ShooterGame:
             self.bullets = [b for b in self.bullets if b not in bullets_to_remove]
             self.enemies = [e for e in self.enemies if e not in enemies_to_remove]
             
-            # Update enemy bullets
+            # Update enemy bullets (optimized batch processing) - HARD LIMIT
             if len(self.enemy_bullets) > 100:
-                self.enemy_bullets = self.enemy_bullets[-100:]
+                self.enemy_bullets = self.enemy_bullets[-100:]  # Reduced from 200 to 100
             
             enemy_bullets_to_remove = []
+            collision_dist_sq = (player_size + 6) ** 2  # 6 is enemy bullet size
+            
             for bullet in self.enemy_bullets:
                 bullet.update()
                 
@@ -1409,12 +1632,11 @@ class ShooterGame:
                     enemy_bullets_to_remove.append(bullet)
                     continue
                 
-                dx = bullet.x - self.player.x
-                dy = bullet.y - self.player.y
+                dx = bullet.x - player_x
+                dy = bullet.y - player_y
                 dist_sq = dx*dx + dy*dy
-                collision_dist = bullet.size + self.player.size
                 
-                if dist_sq < collision_dist * collision_dist:
+                if dist_sq < collision_dist_sq:
                     self.player.health = 0
                     enemy_bullets_to_remove.append(bullet)
                     continue
@@ -1425,14 +1647,17 @@ class ShooterGame:
                         enemy_bullets_to_remove.append(bullet)
                         break
             
-            for bullet in enemy_bullets_to_remove:
-                if bullet in self.enemy_bullets:
-                    self.enemy_bullets.remove(bullet)
+            # Batch remove enemy bullets
+            self.enemy_bullets = [b for b in self.enemy_bullets if b not in enemy_bullets_to_remove]
             
-            # Update items
-            for item in self.items[:]:
-                dist = math.sqrt((item.x - self.player.x)**2 + (item.y - self.player.y)**2)
-                if dist < item.size + self.player.size:
+            # Update items (optimized with squared distance)
+            items_to_remove = []
+            for item in self.items:
+                dx = item.x - player_x
+                dy = item.y - player_y
+                dist_sq = dx*dx + dy*dy
+                pickup_dist = item.size + player_size
+                if dist_sq < pickup_dist * pickup_dist:
                     # Create popup
                     popup_text = item.names.get(item.type, 'Item!')
                     popup_color = item.colors.get(item.type, (255, 255, 255))
@@ -1453,13 +1678,16 @@ class ShooterGame:
                         self.player.has_orbital = True
                     elif item.type == 'dual_gun':
                         self.player.has_dual_gun = True
-                    self.items.remove(item)
+                    items_to_remove.append(item)
             
-            # Update popups
-            for popup in self.popups[:]:
+            # Batch remove items
+            for item in items_to_remove:
+                self.items.remove(item)
+            
+            # Update popups (batch removal)
+            for popup in self.popups:
                 popup.update()
-                if popup.lifetime <= 0:
-                    self.popups.remove(popup)
+            self.popups = [p for p in self.popups if p.lifetime > 0]
             
             # Check win/lose
             if self.kills >= self.goal:
@@ -1470,44 +1698,65 @@ class ShooterGame:
             # Draw
             self.screen.fill((20, 20, 40))
             
-            # Draw grid
-            grid_size = 50
+            # Draw grid (optimized - only every other line for performance)
+            grid_size = 80  # Doubled from 40 to draw half as many lines
             start_x = int(self.camera_x // grid_size) * grid_size
             start_y = int(self.camera_y // grid_size) * grid_size
+            grid_color = (30, 30, 50)
             
-            for x in range(start_x, start_x + self.width + grid_size, grid_size):
-                screen_x = x - self.camera_x
+            # Vertical lines
+            x = start_x
+            while x < start_x + self.width + grid_size:
+                screen_x = int(x - self.camera_x)
                 if 0 <= screen_x <= self.width:
-                    pygame.draw.line(self.screen, (30, 30, 50), (screen_x, 0), (screen_x, self.height))
+                    pygame.draw.line(self.screen, grid_color, (screen_x, 0), (screen_x, self.height))
+                x += grid_size
             
-            for y in range(start_y, start_y + self.height + grid_size, grid_size):
-                screen_y = y - self.camera_y
+            # Horizontal lines
+            y = start_y
+            while y < start_y + self.height + grid_size:
+                screen_y = int(y - self.camera_y)
                 if 0 <= screen_y <= self.height:
-                    pygame.draw.line(self.screen, (30, 30, 50), (0, screen_y), (self.width, screen_y))
+                    pygame.draw.line(self.screen, grid_color, (0, screen_y), (self.width, screen_y))
+                y += grid_size
             
-            # Draw tiles with color based on neighbor count
+            # Draw tiles with color based on neighbor count (with gradual unloading)
             self.wall_renderer.draw_tiles(
-                self.screen, self.camera_x, self.camera_y, self.width, self.height
+                self.screen, self.camera_x, self.camera_y, self.width, self.height, self.frame_count
+            )
+            
+            # Cache camera values for drawing
+            cam_x, cam_y = self.camera_x, self.camera_y
+            
+            # Draw no-spawn zones (semi-transparent white overlay)
+            self.chunk_manager.draw_no_spawn_zones(
+                self.screen, cam_x, cam_y, self.width, self.height
             )
             
             # Draw game objects
-            self.player.draw_orbital(self.screen, self.camera_x, self.camera_y)
-            self.player.draw(self.screen, self.camera_x, self.camera_y)
+            self.player.draw_orbital(self.screen, cam_x, cam_y)
+            self.player.draw(self.screen, cam_x, cam_y)
             
             for bullet in self.bullets:
-                bullet.draw(self.screen, self.camera_x, self.camera_y)
+                bullet.draw(self.screen, cam_x, cam_y)
             
             for bullet in self.enemy_bullets:
-                bullet.draw(self.screen, self.camera_x, self.camera_y)
+                bullet.draw(self.screen, cam_x, cam_y)
             
             for enemy in self.enemies:
-                enemy.draw(self.screen, self.camera_x, self.camera_y)
+                enemy.draw(self.screen, cam_x, cam_y)
             
             for item in self.items:
-                item.draw(self.screen, self.camera_x, self.camera_y)
+                item.draw(self.screen, cam_x, cam_y)
             
             for popup in self.popups:
-                popup.draw(self.screen, self.camera_x, self.camera_y)
+                popup.draw(self.screen, cam_x, cam_y)
+            
+            # Draw collision outlines on top of everything (black lines) - OPTIMIZED
+            # Only get visible walls from chunks instead of checking all walls
+            visible_walls = self.chunk_manager.get_visible_walls(cam_x, cam_y, self.width, self.height)
+            for wall in visible_walls:
+                wall.draw_collision_outline(self.screen, cam_x, cam_y)
             
             # Draw HUD
             if self.boss_active and self.current_boss:
@@ -1532,7 +1781,7 @@ class ShooterGame:
                 pygame.draw.rect(self.screen, (200, 0, 200), (bar_x, bar_y, bar_width, bar_height), 3)
                 
                 # Show health numbers inside bar
-                health_font = pygame.font.Font(None, 24)
+                health_font = pygame.font.SysFont('segoeui', 20, bold=True)
                 health_str = f'{int(self.current_boss.health)} / {int(self.current_boss.max_health)}'
                 health_text = health_font.render(health_str, True, (255, 255, 255))
                 health_rect = health_text.get_rect(center=(self.width // 2, bar_y + bar_height // 2))
@@ -1545,12 +1794,13 @@ class ShooterGame:
             if self.boss_active and self.current_boss:
                 self.draw_boss_pointer()
             
-            # Scale and blit to display
+            # Scale and blit to display (centered with black bars if needed)
+            self.display_screen.fill((0, 0, 0))  # Black bars
             scaled_surface = pygame.transform.scale(
                 self.screen, 
-                (int(self.width * self.scale_x), int(self.height * self.scale_y))
+                (int(self.width * self.scale), int(self.height * self.scale))
             )
-            self.display_screen.blit(scaled_surface, (0, 0))
+            self.display_screen.blit(scaled_surface, (self.offset_x, self.offset_y))
             
             pygame.display.flip()
             self.clock.tick(60)
@@ -1620,8 +1870,8 @@ class ShooterGame:
         """Draw player stats panel in top left"""
         panel_x = 10
         panel_y = 10
-        panel_width = 220
-        panel_height = 186  # Increased for speed stat
+        panel_width = 200
+        panel_height = 175  # Adjusted to fit all stats
         
         # Semi-transparent background
         panel_surf = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
@@ -1630,14 +1880,14 @@ class ShooterGame:
         self.screen.blit(panel_surf, (panel_x, panel_y))
         
         # Title
-        title_font = pygame.font.Font(None, 28)
+        title_font = pygame.font.SysFont('segoeui', 22, bold=True)
         title_text = title_font.render('STATS', True, (200, 220, 255))
         self.screen.blit(title_text, (panel_x + 10, panel_y + 8))
         
         # Stats
-        stat_font = pygame.font.Font(None, 24)
-        y_offset = panel_y + 38
-        line_height = 26
+        stat_font = pygame.font.SysFont('segoeui', 18, bold=True)
+        y_offset = panel_y + 35
+        line_height = 23
         
         # Kills
         if not self.boss_active:
@@ -1687,22 +1937,23 @@ class ShooterGame:
             
             self.screen.fill((20, 40, 20))
             
-            title_font = pygame.font.Font(None, 80)
+            title_font = pygame.font.SysFont('segoeui', 64, bold=True)
             title_text = title_font.render('VICTORY!', True, (100, 255, 100))
             title_rect = title_text.get_rect(center=(self.width // 2, self.height // 2 - 50))
             self.screen.blit(title_text, title_rect)
             
-            msg_font = pygame.font.Font(None, 40)
+            msg_font = pygame.font.SysFont('segoeui', 32, bold=False)
             msg_text = msg_font.render(f'You eliminated all {self.goal} enemies!', True, (255, 255, 255))
             msg_rect = msg_text.get_rect(center=(self.width // 2, self.height // 2 + 50))
             self.screen.blit(msg_text, msg_rect)
             
-            # Scale and blit to display
+            # Scale and blit to display (centered with black bars if needed)
+            self.display_screen.fill((0, 0, 0))  # Black bars
             scaled_surface = pygame.transform.scale(
                 self.screen, 
-                (int(self.width * self.scale_x), int(self.height * self.scale_y))
+                (int(self.width * self.scale), int(self.height * self.scale))
             )
-            self.display_screen.blit(scaled_surface, (0, 0))
+            self.display_screen.blit(scaled_surface, (self.offset_x, self.offset_y))
             
             pygame.display.flip()
             self.clock.tick(60)
@@ -1718,22 +1969,23 @@ class ShooterGame:
             
             self.screen.fill((40, 20, 20))
             
-            title_font = pygame.font.Font(None, 80)
+            title_font = pygame.font.SysFont('segoeui', 64, bold=True)
             title_text = title_font.render('GAME OVER', True, (255, 100, 100))
             title_rect = title_text.get_rect(center=(self.width // 2, self.height // 2 - 50))
             self.screen.blit(title_text, title_rect)
             
-            msg_font = pygame.font.Font(None, 40)
+            msg_font = pygame.font.SysFont('segoeui', 32, bold=False)
             msg_text = msg_font.render(f'Kills: {self.kills} / {self.goal}', True, (255, 255, 255))
             msg_rect = msg_text.get_rect(center=(self.width // 2, self.height // 2 + 50))
             self.screen.blit(msg_text, msg_rect)
             
-            # Scale and blit to display
+            # Scale and blit to display (centered with black bars if needed)
+            self.display_screen.fill((0, 0, 0))  # Black bars
             scaled_surface = pygame.transform.scale(
                 self.screen, 
-                (int(self.width * self.scale_x), int(self.height * self.scale_y))
+                (int(self.width * self.scale), int(self.height * self.scale))
             )
-            self.display_screen.blit(scaled_surface, (0, 0))
+            self.display_screen.blit(scaled_surface, (self.offset_x, self.offset_y))
             
             pygame.display.flip()
             self.clock.tick(60)

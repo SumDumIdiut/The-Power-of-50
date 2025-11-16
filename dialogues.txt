@@ -1,0 +1,5 @@
+Hero: I've been searching for the ancient artifact for weeks now.
+Wizard: The artifact you seek lies deep within the Crystal Caverns.
+Hero: Crystal Caverns? That sounds dangerous. What should I expect?
+Wizard: Beware of the shadow creatures that guard the entrance.
+Hero: I'll be careful. Thank you for the warning!

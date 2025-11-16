@@ -11,9 +11,9 @@ class SnakeGame:
         self.display_screen = screen
         screen_width, screen_height = screen.get_size()
         
-        # Fixed game dimensions (1920x1080)
-        self.width = 1920
-        self.height = 1080
+        # Fixed game dimensions
+        self.width = 1280
+        self.height = 720
         
         # Create a surface at fixed resolution
         self.screen = pygame.Surface((self.width, self.height))
@@ -24,12 +24,12 @@ class SnakeGame:
         self.scale = min(scale_x, scale_y)
         
         # Calculate offset to center the game
-        self.offset_x = (screen_width - self.width * self.scale) // 2
-        self.offset_y = (screen_height - self.height * self.scale) // 2
+        self.offset_x = int((screen_width - self.width * self.scale) // 2)
+        self.offset_y = int((screen_height - self.height * self.scale) // 2)
         
-        # Fixed grid size (number of tiles) - ZOOMED OUT
-        self.grid_tiles_x = 64  # More tiles for zoomed out view
-        self.grid_tiles_y = 36  # More tiles for zoomed out view
+        # Fixed grid size (number of tiles)
+        self.grid_tiles_x = 64  # More tiles for smaller size
+        self.grid_tiles_y = 36  # More tiles for smaller size
         
         # Calculate tile size
         self.tile_width = self.width // self.grid_tiles_x
@@ -46,7 +46,7 @@ class SnakeGame:
         self.wall_segments = []  # Track connected wall segments
         self.apple_pos = self.generate_apple_pos()
         self.score = 0
-        self.font = pygame.font.Font(None, 36)
+        self.font = pygame.font.SysFont('segoeui', 28, bold=True)
         self.game_over = False
         self.won = False
         self.clock = pygame.time.Clock()
@@ -175,25 +175,25 @@ class SnakeGame:
         x_pos = 15
         y_pos = 15
         
-        # Draw apple sprite
-        self.draw_apple_sprite(x_pos, y_pos, size=16)
-        x_pos += 25
+        # Draw apple sprite (smaller)
+        self.draw_apple_sprite(x_pos, y_pos, size=24)
+        x_pos += 32
         
-        # Draw score number (BIGGER UI)
+        # Draw score number
         score_str = str(self.score)
         for char in score_str:
-            x_pos = self.draw_pixel_char(char, x_pos, y_pos + 2, pixel_size=6, color=(255, 255, 255))
+            x_pos = self.draw_pixel_char(char, x_pos, y_pos + 4, pixel_size=4, color=(255, 255, 255))
         
-        x_pos += 5
+        x_pos += 4
         
         # Draw "/"
         pygame.draw.line(self.screen, (200, 200, 200), 
-                        (x_pos + 3, y_pos + 2), (x_pos + 12, y_pos + 28), 4)
-        x_pos += 20
+                        (x_pos + 2, y_pos + 4), (x_pos + 8, y_pos + 20), 3)
+        x_pos += 14
         
         # Draw "50"
         for char in "50":
-            x_pos = self.draw_pixel_char(char, x_pos, y_pos + 2, pixel_size=6, color=(255, 200, 100))
+            x_pos = self.draw_pixel_char(char, x_pos, y_pos + 4, pixel_size=4, color=(255, 200, 100))
     
     def run(self):
         running = True

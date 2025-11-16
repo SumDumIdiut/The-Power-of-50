@@ -158,9 +158,9 @@ class Tower:
         
         # Level indicator
         if self.level > 1:
-            level_font = pygame.font.Font(None, 16)
+            level_font = pygame.font.Font(None, 22)  # Scaled
             level_text = level_font.render(str(self.level), True, (255, 255, 255))
-            level_rect = level_text.get_rect(center=(self.x, self.y + 25))
+            level_rect = level_text.get_rect(center=(self.x, self.y + 33))
             pygame.draw.circle(screen, (0, 0, 0), (int(self.x), int(self.y + 25)), 8)
             screen.blit(level_text, level_rect)
         
@@ -276,9 +276,9 @@ class TowerDefenseGame:
         self.display_screen = screen
         screen_width, screen_height = screen.get_size()
         
-        # Fixed game dimensions (consistent gameplay area) - ZOOMED OUT
-        self.width = 1920
-        self.height = 1080
+        # Fixed game dimensions (consistent gameplay area)
+        self.width = 1280
+        self.height = 720
         
         # Create a surface at fixed resolution
         self.screen = pygame.Surface((self.width, self.height))
@@ -289,15 +289,15 @@ class TowerDefenseGame:
         self.scale = min(scale_x, scale_y)
         
         # Calculate offset to center the game
-        self.offset_x = (screen_width - self.width * self.scale) // 2
-        self.offset_y = (screen_height - self.height * self.scale) // 2
+        self.offset_x = int((screen_width - self.width * self.scale) // 2)
+        self.offset_y = int((screen_height - self.height * self.scale) // 2)
         
         # UI dimensions
         self.side_panel_width = 200
         self.top_bar_height = 100
         self.play_area_width = self.width - self.side_panel_width
         self.clock = pygame.time.Clock()
-        self.font = pygame.font.Font(None, 32)
+        self.font = pygame.font.SysFont('segoeui', 32, bold=True)  # Scaled for 1280x720
         
         # Game state
         self.money = 200
@@ -767,7 +767,7 @@ class TowerDefenseGame:
         self.screen.blit(wave_text, (250, 15))
         
         # Buy menu title or tower info
-        title_font = pygame.font.Font(None, 48)
+        title_font = pygame.font.Font(None, 64)  # Scaled for 1280x720
         
         if self.selected_tower:
             # Show selected tower info
@@ -776,7 +776,7 @@ class TowerDefenseGame:
             self.screen.blit(title_text, title_rect)
             
             # Level and path indicator
-            level_font = pygame.font.Font(None, 28)
+            level_font = pygame.font.Font(None, 38)  # Scaled
             level_str = f'Level {self.selected_tower.level}/3'
             if self.selected_tower.upgrade_path:
                 path_names = {'top': 'Power', 'middle': 'Range', 'bottom': 'Speed'}
@@ -802,19 +802,19 @@ class TowerDefenseGame:
                 pygame.draw.rect(self.screen, border_color, (x, button_y, button_width, button_height), 3, border_radius=5)
                 
                 # Path name
-                name_font = pygame.font.Font(None, 26)
+                name_font = pygame.font.Font(None, 35)  # Scaled
                 name_text = name_font.render(path_info['name'], True, (255, 255, 255))
                 name_rect = name_text.get_rect(center=(x + button_width // 2, button_y + 15))
                 self.screen.blit(name_text, name_rect)
                 
                 # Description
-                desc_font = pygame.font.Font(None, 20)
+                desc_font = pygame.font.Font(None, 27)  # Scaled
                 desc_text = desc_font.render(path_info['desc'], True, (200, 200, 200))
                 desc_rect = desc_text.get_rect(center=(x + button_width // 2, button_y + 35))
                 self.screen.blit(desc_text, desc_rect)
                 
                 # Cost
-                cost_font = pygame.font.Font(None, 22)
+                cost_font = pygame.font.Font(None, 30)  # Scaled
                 cost_text = cost_font.render(f'${path_info["cost"]}', True, (255, 255, 100))
                 cost_rect = cost_text.get_rect(center=(x + button_width // 2, button_y + 50))
                 self.screen.blit(cost_text, cost_rect)
@@ -824,7 +824,7 @@ class TowerDefenseGame:
                 max_y = 150
                 pygame.draw.rect(self.screen, (40, 40, 40), (x, max_y, button_width, 60), border_radius=5)
                 pygame.draw.rect(self.screen, (80, 80, 80), (x, max_y, button_width, 60), 3, border_radius=5)
-                max_font = pygame.font.Font(None, 28)
+                max_font = pygame.font.Font(None, 38)  # Scaled
                 max_text = max_font.render('MAX LEVEL', True, (150, 150, 150))
                 max_rect = max_text.get_rect(center=(x + button_width // 2, max_y + 30))
                 self.screen.blit(max_text, max_rect)
@@ -837,7 +837,7 @@ class TowerDefenseGame:
             pygame.draw.rect(self.screen, (100, 50, 50), (x, sell_y, button_width, sell_height), border_radius=5)
             pygame.draw.rect(self.screen, (200, 100, 100), (x, sell_y, button_width, sell_height), 3, border_radius=5)
             
-            sell_font = pygame.font.Font(None, 28)
+            sell_font = pygame.font.Font(None, 38)  # Scaled
             sell_text = sell_font.render(f'Sell ${sell_value}', True, (255, 255, 255))
             sell_rect = sell_text.get_rect(center=(x + button_width // 2, sell_y + sell_height // 2))
             self.screen.blit(sell_text, sell_rect)
@@ -880,7 +880,7 @@ class TowerDefenseGame:
             preview_tower.draw(self.screen, False)
             
             # Name
-            name_font = pygame.font.Font(None, 28)
+            name_font = pygame.font.Font(None, 38)  # Scaled
             name_text = name_font.render(name, True, (255, 255, 255))
             name_rect = name_text.get_rect(center=(x + button_width // 2, y + 80))
             self.screen.blit(name_text, name_rect)
@@ -902,13 +902,13 @@ class TowerDefenseGame:
             
             self.screen.fill((20, 40, 20))
             
-            title_font = pygame.font.Font(None, 80)
+            title_font = pygame.font.Font(None, 107)  # Scaled
             title_text = title_font.render('VICTORY!', True, (100, 255, 100))
-            title_rect = title_text.get_rect(center=(400, 200))
+            title_rect = title_text.get_rect(center=(640, 267))  # Centered for 1280x720
             self.screen.blit(title_text, title_rect)
             
             msg_text = self.font.render(f'You survived all {self.max_waves} waves!', True, (255, 255, 255))
-            msg_rect = msg_text.get_rect(center=(400, 300))
+            msg_rect = msg_text.get_rect(center=(640, 400))  # Centered for 1280x720
             self.screen.blit(msg_text, msg_rect)
             
             # Scale and blit to display (centered with black bars if needed)
@@ -933,13 +933,13 @@ class TowerDefenseGame:
             
             self.screen.fill((40, 20, 20))
             
-            title_font = pygame.font.Font(None, 80)
+            title_font = pygame.font.Font(None, 107)  # Scaled
             title_text = title_font.render('GAME OVER', True, (255, 100, 100))
-            title_rect = title_text.get_rect(center=(400, 200))
+            title_rect = title_text.get_rect(center=(640, 267))  # Centered for 1280x720
             self.screen.blit(title_text, title_rect)
             
             msg_text = self.font.render(f'Survived {self.wave} / {self.max_waves} waves', True, (255, 255, 255))
-            msg_rect = msg_text.get_rect(center=(400, 300))
+            msg_rect = msg_text.get_rect(center=(640, 400))  # Centered for 1280x720
             self.screen.blit(msg_text, msg_rect)
             
             # Scale and blit to display (centered with black bars if needed)
