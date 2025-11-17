@@ -24,10 +24,16 @@ class Player:
         self.damage = 5
         self.multi_shot = 1
         self.bullet_bounce = 0
+        self.bullet_pierce = 0  # How many enemies a bullet can pierce through
         # Special weapons
         self.has_orbital = False
+        self.orbital_count = 0  # Number of orbital saws
         self.orbital_angle = 0
         self.has_dual_gun = False
+        self.dual_gun_count = 0  # Number of extra guns
+        self.has_shield = False
+        self.shield_timer = 0
+        self.shield_duration = 300  # 5 seconds at 60fps
         # Movement spin
         self.spin_angle = 0
         self.is_moving = False
@@ -184,9 +190,9 @@ class Player:
 
 
 class Bullet:
-    __slots__ = ('x', 'y', 'direction', 'speed', 'size', 'damage', 'bounces_left', 'max_bounces', 'lifetime', 'last_bounce_frame')
+    __slots__ = ('x', 'y', 'direction', 'speed', 'size', 'damage', 'bounces_left', 'max_bounces', 'lifetime', 'last_bounce_frame', 'pierce_left', 'max_pierce', 'hit_enemies')
     
-    def __init__(self, x, y, direction, damage=10, bounces=0):
+    def __init__(self, x, y, direction, damage=10, bounces=0, pierce=0):
         self.x = x
         self.y = y
         inaccuracy = 0.15
@@ -201,6 +207,9 @@ class Bullet:
         self.max_bounces = bounces
         self.lifetime = 300  # Max 5 seconds lifetime
         self.last_bounce_frame = 0
+        self.pierce_left = pierce
+        self.max_pierce = pierce
+        self.hit_enemies = set()  # Track which enemies were hit (for pierce)
     
     def update(self):
         self.x += self.direction[0] * self.speed
@@ -236,7 +245,15 @@ class Bullet:
     def draw(self, screen, camera_x, camera_y):
         screen_x = self.x - camera_x
         screen_y = self.y - camera_y
-        color = (0, 255, 255) if self.max_bounces > 0 else (255, 255, 0)
+        
+        # Color based on bullet type
+        if self.max_pierce > 0:
+            color = (255, 0, 255)  # Magenta for pierce
+        elif self.max_bounces > 0:
+            color = (0, 255, 255)  # Cyan for bounce
+        else:
+            color = (255, 255, 0)  # Yellow for normal
+        
         pygame.draw.circle(screen, color, (int(screen_x), int(screen_y)), self.size)
 
 
@@ -612,6 +629,7 @@ class Item:
             'multishot': (100, 200, 255),
             'damage': (255, 150, 50),
             'bounce': (0, 255, 255),
+            'pierce': (255, 0, 255),
             'speed': (100, 255, 100),
             'orbital': (255, 200, 0),
             'dual_gun': (255, 100, 100)
@@ -621,6 +639,7 @@ class Item:
             'multishot': '+Multi-Shot',
             'damage': '+Damage',
             'bounce': '+Bounce',
+            'pierce': '+Pierce',
             'speed': '+Speed',
             'orbital': 'ORBITAL SAW',
             'dual_gun': 'DUAL GUN'
@@ -630,6 +649,7 @@ class Item:
             'multishot': 'More Bullets',
             'damage': 'More Damage',
             'bounce': 'Bullets Bounce',
+            'pierce': 'Pierce Enemies',
             'speed': 'Move Faster',
             'orbital': 'Spinning Saws!',
             'dual_gun': 'Double Shots!'
@@ -1261,10 +1281,12 @@ class ShooterGame:
         self.font = pygame.font.SysFont('segoeui', 28, bold=True)
         self.font.set_bold(True)
         
-        # World setup
+        # World setup - MUST complete before enemy spawning
+        print("Generating map...")
         self.world_size = 18000  # Larger map for more exploration
         self.chunk_manager = ChunkManager(self.world_size)
-        self.chunk_manager.generate_map()
+        self.chunk_manager.generate_map()  # This calls generate_no_spawn_zones() at the end
+        print(f"Map generated with {len(self.chunk_manager.no_spawn_zones)} no-spawn zones")
         
         # Wall renderer (pass tilemap reference)
         self.wall_renderer = WallRenderer(self.chunk_manager.tilemap)
@@ -1276,6 +1298,10 @@ class ShooterGame:
         
         # Load initial chunks
         self.chunk_manager.load_chunks_around(spawn_x, spawn_y)
+        
+        # Map is now fully loaded and ready for enemy spawning
+        self.map_loaded = True
+        print("Map fully loaded, ready for gameplay")
         
         # Camera
         self.camera_x = 0
@@ -1301,6 +1327,11 @@ class ShooterGame:
     
     def spawn_enemy(self):
         """Spawn enemy off-screen or boss in room"""
+        # Ensure map is fully loaded before spawning
+        if not hasattr(self, 'map_loaded') or not self.map_loaded:
+            print("WARNING: Attempted to spawn enemy before map was loaded!")
+            return
+        
         if self.boss_active:
             return
         
@@ -1406,7 +1437,8 @@ class ShooterGame:
                         # Single shot at enemy
                         self.bullets.append(Bullet(self.player.x, self.player.y,
                                                   self.player.shoot_direction,
-                                                  self.player.damage, self.player.bullet_bounce))
+                                                  self.player.damage, self.player.bullet_bounce,
+                                                  self.player.bullet_pierce))
                     else:
                         # Multi-shot spread at enemy
                         spread_angle = 0.3
@@ -1416,7 +1448,8 @@ class ShooterGame:
                                              self.player.shoot_direction[0]) + offset
                             direction = [math.cos(angle), math.sin(angle)]
                             self.bullets.append(Bullet(self.player.x, self.player.y, direction,
-                                                      self.player.damage, self.player.bullet_bounce))
+                                                      self.player.damage, self.player.bullet_bounce,
+                                                      self.player.bullet_pierce))
                 
                 self.shoot_cooldown = self.player.fire_rate
             
@@ -1578,10 +1611,19 @@ class ShooterGame:
                     collision_dist = bullet.size + enemy.size
                     
                     if dist_sq < collision_dist * collision_dist:
+                        # Skip if already hit this enemy (for pierce)
+                        if id(enemy) in bullet.hit_enemies:
+                            continue
+                        
+                        bullet.hit_enemies.add(id(enemy))
                         enemy.health -= bullet.damage
                         
+                        # Pierce bullets can hit multiple enemies
+                        if bullet.pierce_left > 0:
+                            bullet.pierce_left -= 1
+                            # Don't remove bullet, let it continue
                         # Bouncing bullets bounce off enemies but with reduced lifetime
-                        if bullet.bounces_left > 0:
+                        elif bullet.bounces_left > 0:
                             dist = math.sqrt(dist_sq)
                             if dist > 0:
                                 bullet.direction = [dx/dist, dy/dist]
@@ -1596,19 +1638,16 @@ class ShooterGame:
                             enemies_to_remove.add(enemy)
                             enemies_killed.add(enemy)
                             
-                            # Boss drops special items
+                            # Boss drops special items (one saw/gun at a time)
                             if enemy.is_boss and not enemy.is_final:
-                                if enemy.boss_id == 1:
-                                    item_type = 'orbital'
-                                elif enemy.boss_id == 2:
-                                    item_type = 'dual_gun'
-                                elif enemy.boss_id == 3:
+                                # Alternate between orbital and dual gun based on what player has
+                                if self.player.orbital_count <= self.player.dual_gun_count:
                                     item_type = 'orbital'
                                 else:
                                     item_type = 'dual_gun'
                             else:
                                 # Normal drops
-                                item_type = random.choice(['firerate', 'multishot', 'damage', 'bounce', 'speed'])
+                                item_type = random.choice(['firerate', 'multishot', 'damage', 'bounce', 'pierce', 'speed'])
                             
                             self.items.append(Item(enemy.x, enemy.y, item_type))
                             self.kills += 1
@@ -1672,12 +1711,16 @@ class ShooterGame:
                         self.player.damage += 2
                     elif item.type == 'bounce':
                         self.player.bullet_bounce = min(3, self.player.bullet_bounce + 1)
+                    elif item.type == 'pierce':
+                        self.player.bullet_pierce = min(5, self.player.bullet_pierce + 1)
                     elif item.type == 'speed':
                         self.player.speed = min(12, self.player.speed + 0.5)
                     elif item.type == 'orbital':
                         self.player.has_orbital = True
+                        self.player.orbital_count += 1
                     elif item.type == 'dual_gun':
                         self.player.has_dual_gun = True
+                        self.player.dual_gun_count += 1
                     items_to_remove.append(item)
             
             # Batch remove items
@@ -1871,7 +1914,7 @@ class ShooterGame:
         panel_x = 10
         panel_y = 10
         panel_width = 200
-        panel_height = 175  # Adjusted to fit all stats
+        panel_height = 195  # Adjusted to fit all stats
         
         # Semi-transparent background
         panel_surf = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
@@ -1916,8 +1959,14 @@ class ShooterGame:
         
         # Bounce
         bounce_color = (0, 255, 255) if self.player.bullet_bounce > 0 else (180, 180, 180)
-        bounce_text = stat_font.render(f'Bounces: {self.player.bullet_bounce}', True, bounce_color)
+        bounce_text = stat_font.render(f'Bounce: {self.player.bullet_bounce}', True, bounce_color)
         self.screen.blit(bounce_text, (panel_x + 10, y_offset))
+        y_offset += line_height
+        
+        # Pierce
+        pierce_color = (255, 0, 255) if self.player.bullet_pierce > 0 else (180, 180, 180)
+        pierce_text = stat_font.render(f'Pierce: {self.player.bullet_pierce}', True, pierce_color)
+        self.screen.blit(pierce_text, (panel_x + 10, y_offset))
         y_offset += line_height
         
         # Speed
