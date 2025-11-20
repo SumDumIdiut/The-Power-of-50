@@ -54,3 +54,24 @@ class Tilemap:
     def get_all_tiles(self):
         """Get all tile positions"""
         return list(self.tiles.keys())
+    
+    def check_collision(self, x, y, size):
+        """Check if a point collides with any tile (works even if walls not rendered)"""
+        # Convert world position to grid position
+        gx = int(x // self.tile_size)
+        gy = int(y // self.tile_size)
+        
+        # Check the tile and adjacent tiles for collision
+        for check_gx in range(gx - 1, gx + 2):
+            for check_gy in range(gy - 1, gy + 2):
+                if (check_gx, check_gy) in self.tiles:
+                    # Calculate tile world bounds
+                    tile_x = check_gx * self.tile_size
+                    tile_y = check_gy * self.tile_size
+                    
+                    # Simple AABB collision
+                    if (x + size > tile_x and x - size < tile_x + self.tile_size and
+                        y + size > tile_y and y - size < tile_y + self.tile_size):
+                        return True
+        
+        return False

@@ -5,8 +5,9 @@ import pygame
 
 
 class WallRenderer:
-    def __init__(self, tilemap):
+    def __init__(self, tilemap, sprites=None):
         self.tilemap = tilemap
+        self.sprites = sprites or {}
         # Pre-create color surfaces for batch rendering
         self.tile_size = tilemap.tile_size
         self.color_surfaces = {}
@@ -68,12 +69,27 @@ class WallRenderer:
                     
                     tiles_by_color[neighbor_count].append((screen_x, screen_y))
         
-        # Draw tiles in batches by color
+        # Draw tiles in batches by color or sprite
         for neighbor_count, positions in tiles_by_color.items():
-            if positions and neighbor_count in self.color_surfaces:
-                surf = self.color_surfaces[neighbor_count]
-                for screen_x, screen_y in positions:
-                    screen.blit(surf, (screen_x, screen_y))
+            if positions:
+                # Determine which sprite to use based on neighbor count
+                sprite_key = None
+                if neighbor_count == 4:
+                    sprite_key = 'inside_wall'
+                elif neighbor_count in [2, 3]:
+                    sprite_key = 'wall'
+                elif neighbor_count in [0, 1]:
+                    sprite_key = 'corner'
+                
+                # Use sprite if available, otherwise use color surface
+                if sprite_key and sprite_key in self.sprites:
+                    sprite = self.sprites[sprite_key]
+                    for screen_x, screen_y in positions:
+                        screen.blit(sprite, (screen_x, screen_y))
+                elif neighbor_count in self.color_surfaces:
+                    surf = self.color_surfaces[neighbor_count]
+                    for screen_x, screen_y in positions:
+                        screen.blit(surf, (screen_x, screen_y))
         
         # Gradually unload distant tile regions (visual only, collision stays)
         chunks_to_unload = []

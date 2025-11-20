@@ -6,8 +6,37 @@ Uses tilemap system for procedural level generation
 import pygame
 import math
 import random
+import os
 from .wall_renderer import WallRenderer
 from .tilemap import Tilemap
+
+# Sprite file names (in assets folder)
+PLAYER_SPRITE = 'player.png'
+ENEMY_YELLOW_SPRITE = 'enemy_yellow.png'
+ENEMY_RED_SPRITE = 'enemy_red.png'
+ENEMY_GREY_SPRITE = 'enemy_grey.png'
+ENEMY_GREEN_SPRITE = 'enemy_green.png'
+BOSS_SPRITE = 'boss.png'
+BULLET_PLAYER_SPRITE = 'bullet_player.png'
+BULLET_BOUNCE_SPRITE = 'bullet_bounce.png'
+BULLET_PIERCE_SPRITE = 'bullet_pierce.png'
+BULLET_ENEMY_SPRITE = 'bullet_enemy.png'
+BULLET_CANNON_SPRITE = 'bullet_cannon.png'
+SAW_SPRITE = 'saw.png'
+GUN_SPRITE = 'gun.png'
+DUAL_GUN_SPRITE = 'dual_gun.png'
+POWERUP_HEALTH_SPRITE = 'powerup_health.png'
+POWERUP_DAMAGE_SPRITE = 'powerup_damage.png'
+POWERUP_MULTISHOT_SPRITE = 'powerup_multishot.png'
+POWERUP_BOUNCE_SPRITE = 'powerup_bounce.png'
+POWERUP_PIERCE_SPRITE = 'powerup_pierce.png'
+POWERUP_ORBITAL_SPRITE = 'powerup_orbital.png'
+HEALTHBAR_OUTLINE_SPRITE = 'healthbar_outline.png'
+HEALTHBAR_FILL_SPRITE = 'healthbar_fill.png'
+WALL_SPRITE = 'wall.png'
+CORNER_SPRITE = 'corner.png'
+INSIDE_WALL_SPRITE = 'inside_wall.png'
+GROUND_SPRITE = 'ground.png'
 
 
 class Player:
@@ -39,7 +68,7 @@ class Player:
         self.spin_angle = 0
         self.is_moving = False
     
-    def draw(self, screen, camera_x, camera_y):
+    def draw(self, screen, camera_x, camera_y, sprites=None):
         screen_x = self.x - camera_x
         screen_y = self.y - camera_y
         
@@ -50,20 +79,49 @@ class Player:
             # No target - point in last known direction
             angle = math.atan2(self.shoot_direction[1], self.shoot_direction[0])
         
-        points = [
-            (screen_x + math.cos(angle) * self.size,
-             screen_y + math.sin(angle) * self.size),
-            (screen_x + math.cos(angle + 2.5) * self.size * 0.6,
-             screen_y + math.sin(angle + 2.5) * self.size * 0.6),
-            (screen_x + math.cos(angle - 2.5) * self.size * 0.6,
-             screen_y + math.sin(angle - 2.5) * self.size * 0.6)
-        ]
-        pygame.draw.polygon(screen, (50, 150, 255), points)
-        pygame.draw.polygon(screen, (255, 255, 255), points, 2)
+        # Get player sprite
+        player_sprite = sprites.get('player') if sprites else None
         
-        # Draw dual gun indicator
-        if self.has_dual_gun:
-            # Second barrel
+        if player_sprite:
+            # Use sprite if available (rotate it to face direction)
+            rotated = pygame.transform.rotate(player_sprite, -math.degrees(angle) - 90)
+            rect = rotated.get_rect(center=(screen_x, screen_y))
+            screen.blit(rotated, rect)
+        else:
+            # Fallback to pygame drawing
+            points = [
+                (screen_x + math.cos(angle) * self.size,
+                 screen_y + math.sin(angle) * self.size),
+                (screen_x + math.cos(angle + 2.5) * self.size * 0.6,
+                 screen_y + math.sin(angle + 2.5) * self.size * 0.6),
+                (screen_x + math.cos(angle - 2.5) * self.size * 0.6,
+                 screen_y + math.sin(angle - 2.5) * self.size * 0.6)
+            ]
+            pygame.draw.polygon(screen, (50, 150, 255), points)
+            pygame.draw.polygon(screen, (255, 255, 255), points, 2)
+        
+        # Draw gun sprite on top of player
+        if sprites:
+            gun_sprite = sprites.get('dual_gun') if self.has_dual_gun else sprites.get('gun')
+            if gun_sprite:
+                # Position gun in front of player
+                gun_offset = 15
+                gun_x = screen_x + math.cos(angle) * gun_offset
+                gun_y = screen_y + math.sin(angle) * gun_offset
+                rotated_gun = pygame.transform.rotate(gun_sprite, -math.degrees(angle) - 90)
+                gun_rect = rotated_gun.get_rect(center=(gun_x, gun_y))
+                screen.blit(rotated_gun, gun_rect)
+            elif self.has_dual_gun:
+                # Fallback dual gun indicator
+                offset_angle = angle + math.pi / 2
+                offset_x = math.cos(offset_angle) * 8
+                offset_y = math.sin(offset_angle) * 8
+                pygame.draw.line(screen, (255, 200, 0), 
+                               (screen_x + offset_x, screen_y + offset_y),
+                               (screen_x + offset_x + math.cos(angle) * 15, 
+                                screen_y + offset_y + math.sin(angle) * 15), 3)
+        elif self.has_dual_gun:
+            # Fallback dual gun indicator
             offset_angle = angle + math.pi / 2
             offset_x = math.cos(offset_angle) * 8
             offset_y = math.sin(offset_angle) * 8
@@ -183,7 +241,7 @@ class Player:
         if self.has_orbital:
             self.orbital_angle += 0.1
     
-    def draw_orbital(self, screen, camera_x, camera_y):
+    def draw_orbital(self, screen, camera_x, camera_y, sprite=None):
         """Draw orbital weapon"""
         if not self.has_orbital:
             return
@@ -198,18 +256,25 @@ class Player:
             saw_x = screen_x + math.cos(angle) * orbit_radius
             saw_y = screen_y + math.sin(angle) * orbit_radius
             
-            # Draw spinning saw
-            pygame.draw.circle(screen, (255, 200, 0), (int(saw_x), int(saw_y)), 12)
-            pygame.draw.circle(screen, (255, 100, 0), (int(saw_x), int(saw_y)), 12, 2)
-            
-            # Draw blades
-            for j in range(4):
-                blade_angle = angle * 5 + (j * math.pi / 2)
-                blade_x1 = saw_x + math.cos(blade_angle) * 8
-                blade_y1 = saw_y + math.sin(blade_angle) * 8
-                blade_x2 = saw_x + math.cos(blade_angle + math.pi) * 8
-                blade_y2 = saw_y + math.sin(blade_angle + math.pi) * 8
-                pygame.draw.line(screen, (255, 255, 255), (blade_x1, blade_y1), (blade_x2, blade_y2), 2)
+            if sprite:
+                # Use sprite if available (rotate it for spinning effect)
+                rotated = pygame.transform.rotate(sprite, -math.degrees(angle * 5))
+                rect = rotated.get_rect(center=(int(saw_x), int(saw_y)))
+                screen.blit(rotated, rect)
+            else:
+                # Fallback to pygame drawing
+                # Draw spinning saw
+                pygame.draw.circle(screen, (255, 200, 0), (int(saw_x), int(saw_y)), 12)
+                pygame.draw.circle(screen, (255, 100, 0), (int(saw_x), int(saw_y)), 12, 2)
+                
+                # Draw blades
+                for j in range(4):
+                    blade_angle = angle * 5 + (j * math.pi / 2)
+                    blade_x1 = saw_x + math.cos(blade_angle) * 8
+                    blade_y1 = saw_y + math.sin(blade_angle) * 8
+                    blade_x2 = saw_x + math.cos(blade_angle + math.pi) * 8
+                    blade_y2 = saw_y + math.sin(blade_angle + math.pi) * 8
+                    pygame.draw.line(screen, (255, 255, 255), (blade_x1, blade_y1), (blade_x2, blade_y2), 2)
 
 
 class Bullet:
@@ -265,19 +330,35 @@ class Bullet:
         self.bounces_left -= 1
         return True
     
-    def draw(self, screen, camera_x, camera_y):
+    def draw(self, screen, camera_x, camera_y, sprites=None):
         screen_x = self.x - camera_x
         screen_y = self.y - camera_y
         
-        # Color based on bullet type
-        if self.max_pierce > 0:
-            color = (255, 0, 255)  # Magenta for pierce
-        elif self.max_bounces > 0:
-            color = (0, 255, 255)  # Cyan for bounce
-        else:
-            color = (255, 255, 0)  # Yellow for normal
+        # Determine which sprite to use based on bullet type
+        sprite = None
+        if sprites:
+            if self.max_pierce > 0:
+                sprite = sprites.get('bullet_pierce')
+            elif self.max_bounces > 0:
+                sprite = sprites.get('bullet_bounce')
+            else:
+                sprite = sprites.get('bullet_player')
         
-        pygame.draw.circle(screen, color, (int(screen_x), int(screen_y)), self.size)
+        if sprite:
+            # Use sprite if available
+            rect = sprite.get_rect(center=(int(screen_x), int(screen_y)))
+            screen.blit(sprite, rect)
+        else:
+            # Fallback to pygame drawing
+            # Color based on bullet type
+            if self.max_pierce > 0:
+                color = (255, 0, 255)  # Magenta for pierce
+            elif self.max_bounces > 0:
+                color = (0, 255, 255)  # Cyan for bounce
+            else:
+                color = (255, 255, 0)  # Yellow for normal
+            
+            pygame.draw.circle(screen, color, (int(screen_x), int(screen_y)), self.size)
 
 
 class Popup:
@@ -605,7 +686,7 @@ class Enemy:
         
         return bullets
     
-    def draw(self, screen, camera_x, camera_y):
+    def draw(self, screen, camera_x, camera_y, sprites=None):
         screen_x = self.x - camera_x
         screen_y = self.y - camera_y
         
@@ -630,28 +711,44 @@ class Enemy:
                 pygame.draw.circle(glow_surf, (*glow_color, 40), (glow_size, glow_size), glow_size)
                 screen.blit(glow_surf, (int(screen_x - glow_size), int(screen_y - glow_size)))
         
-        # Color based on type
-        if self.is_final:
-            color = (200, 0, 200)
-            border_color = (255, 0, 255)
-        elif self.is_boss:
-            color = (150, 0, 150)
-            border_color = (100, 0, 100)
+        # Determine sprite key and fallback color
+        sprite_key = None
+        if self.is_boss:
+            sprite_key = 'boss'
+            color = (200, 0, 200) if self.is_final else (150, 0, 150)
+            border_color = (255, 0, 255) if self.is_final else (100, 0, 100)
         elif self.enemy_type == 'fast':
+            sprite_key = 'enemy_yellow'
             color = (255, 200, 50)
             border_color = (200, 150, 0)
         elif self.enemy_type == 'tank':
+            sprite_key = 'enemy_grey'
             color = (100, 100, 150)
             border_color = (50, 50, 100)
         elif self.enemy_type == 'shooter':
+            sprite_key = 'enemy_green'
             color = (150, 255, 150)
             border_color = (100, 200, 100)
         else:
+            sprite_key = 'enemy_red'
             color = (255, 50, 50)
             border_color = (150, 0, 0)
         
-        pygame.draw.circle(screen, color, (int(screen_x), int(screen_y)), self.size)
-        pygame.draw.circle(screen, border_color, (int(screen_x), int(screen_y)), self.size, 4 if self.is_final else (3 if self.is_boss else 2))
+        # Use sprite if available
+        if sprites and sprite_key in sprites:
+            sprite = sprites[sprite_key]
+            if self.is_boss:
+                # Scale boss sprite larger
+                scaled_sprite = pygame.transform.scale(sprite, (self.size * 2, self.size * 2))
+                rect = scaled_sprite.get_rect(center=(int(screen_x), int(screen_y)))
+                screen.blit(scaled_sprite, rect)
+            else:
+                rect = sprite.get_rect(center=(int(screen_x), int(screen_y)))
+                screen.blit(sprite, rect)
+        else:
+            # Fallback to pygame drawing
+            pygame.draw.circle(screen, color, (int(screen_x), int(screen_y)), self.size)
+            pygame.draw.circle(screen, border_color, (int(screen_x), int(screen_y)), self.size, 4 if self.is_final else (3 if self.is_boss else 2))
         
         # Health bar
         bar_width = min(100, 40 + int(self.max_health / 100) * 10)
@@ -685,15 +782,30 @@ class EnemyBullet:
         self.x += self.direction[0] * self.speed
         self.y += self.direction[1] * self.speed
     
-    def draw(self, screen, camera_x, camera_y):
+    def draw(self, screen, camera_x, camera_y, sprites=None):
         screen_x = self.x - camera_x
         screen_y = self.y - camera_y
-        if self.is_cannon:
-            # Cannon bullets are grey/dark
-            pygame.draw.circle(screen, (100, 100, 120), (int(screen_x), int(screen_y)), self.size)
-            pygame.draw.circle(screen, (150, 150, 170), (int(screen_x), int(screen_y)), self.size, 2)
+        
+        # Determine which sprite to use
+        sprite = None
+        if sprites:
+            if self.is_cannon:
+                sprite = sprites.get('bullet_cannon')
+            else:
+                sprite = sprites.get('bullet_enemy')
+        
+        if sprite:
+            # Use sprite if available
+            rect = sprite.get_rect(center=(int(screen_x), int(screen_y)))
+            screen.blit(sprite, rect)
         else:
-            pygame.draw.circle(screen, (255, 50, 50), (int(screen_x), int(screen_y)), self.size)
+            # Fallback to pygame drawing
+            if self.is_cannon:
+                # Cannon bullets are grey/dark
+                pygame.draw.circle(screen, (100, 100, 120), (int(screen_x), int(screen_y)), self.size)
+                pygame.draw.circle(screen, (150, 150, 170), (int(screen_x), int(screen_y)), self.size, 2)
+            else:
+                pygame.draw.circle(screen, (255, 50, 50), (int(screen_x), int(screen_y)), self.size)
 
 
 class Item:
@@ -733,37 +845,52 @@ class Item:
             'dual_gun': 'Double Shots!'
         }
     
-    def draw(self, screen, camera_x, camera_y):
+    def draw(self, screen, camera_x, camera_y, sprites=None):
         screen_x = self.x - camera_x
         screen_y = self.y - camera_y
         color = self.colors.get(self.type, (255, 255, 255))
         
-        # Draw glow effect
-        glow_surf = pygame.Surface((self.size * 4, self.size * 4), pygame.SRCALPHA)
-        pygame.draw.circle(glow_surf, (*color, 30), (self.size * 2, self.size * 2), self.size * 2)
-        screen.blit(glow_surf, (int(screen_x - self.size * 2), int(screen_y - self.size * 2)))
+        # Determine sprite key
+        sprite_key = f'powerup_{self.type}' if self.type != 'health' else 'powerup_health'
         
-        # Draw item
-        pygame.draw.circle(screen, color, (int(screen_x), int(screen_y)), self.size)
-        pygame.draw.circle(screen, (255, 255, 255), (int(screen_x), int(screen_y)), self.size, 2)
-        
-        # Draw icon based on type
-        if self.type == 'firerate':
-            for i in range(3):
-                pygame.draw.circle(screen, (255, 255, 255), (int(screen_x - 6 + i * 6), int(screen_y)), 2)
-        elif self.type == 'multishot':
-            for i in range(3):
-                offset = (i - 1) * 5
-                pygame.draw.polygon(screen, (255, 255, 255), [
-                    (screen_x + offset, screen_y - 5),
-                    (screen_x + offset - 3, screen_y + 2),
-                    (screen_x + offset + 3, screen_y + 2)
-                ])
-        elif self.type == 'damage':
-            pygame.draw.line(screen, (255, 255, 255), (screen_x - 5, screen_y + 5), (screen_x + 5, screen_y - 5), 3)
-        elif self.type == 'bounce':
-            points = [(screen_x - 6, screen_y + 4), (screen_x, screen_y - 6), (screen_x + 6, screen_y + 4)]
-            pygame.draw.lines(screen, (255, 255, 255), False, points, 2)
+        # Use sprite if available
+        if sprites and sprite_key in sprites:
+            sprite = sprites[sprite_key]
+            # Draw glow effect
+            glow_surf = pygame.Surface((self.size * 4, self.size * 4), pygame.SRCALPHA)
+            pygame.draw.circle(glow_surf, (*color, 30), (self.size * 2, self.size * 2), self.size * 2)
+            screen.blit(glow_surf, (int(screen_x - self.size * 2), int(screen_y - self.size * 2)))
+            
+            rect = sprite.get_rect(center=(int(screen_x), int(screen_y)))
+            screen.blit(sprite, rect)
+        else:
+            # Fallback to pygame drawing
+            # Draw glow effect
+            glow_surf = pygame.Surface((self.size * 4, self.size * 4), pygame.SRCALPHA)
+            pygame.draw.circle(glow_surf, (*color, 30), (self.size * 2, self.size * 2), self.size * 2)
+            screen.blit(glow_surf, (int(screen_x - self.size * 2), int(screen_y - self.size * 2)))
+            
+            # Draw item
+            pygame.draw.circle(screen, color, (int(screen_x), int(screen_y)), self.size)
+            pygame.draw.circle(screen, (255, 255, 255), (int(screen_x), int(screen_y)), self.size, 2)
+            
+            # Draw icon based on type
+            if self.type == 'firerate':
+                for i in range(3):
+                    pygame.draw.circle(screen, (255, 255, 255), (int(screen_x - 6 + i * 6), int(screen_y)), 2)
+            elif self.type == 'multishot':
+                for i in range(3):
+                    offset = (i - 1) * 5
+                    pygame.draw.polygon(screen, (255, 255, 255), [
+                        (screen_x + offset, screen_y - 5),
+                        (screen_x + offset - 3, screen_y + 2),
+                        (screen_x + offset + 3, screen_y + 2)
+                    ])
+            elif self.type == 'damage':
+                pygame.draw.line(screen, (255, 255, 255), (screen_x - 5, screen_y + 5), (screen_x + 5, screen_y - 5), 3)
+            elif self.type == 'bounce':
+                points = [(screen_x - 6, screen_y + 4), (screen_x, screen_y - 6), (screen_x + 6, screen_y + 4)]
+                pygame.draw.lines(screen, (255, 255, 255), False, points, 2)
         
         # Draw description text below item
         desc_font = pygame.font.SysFont('segoeui', 16, bold=True)
@@ -1366,8 +1493,12 @@ class ShooterGame:
         self.chunk_manager.generate_map()  # This calls generate_no_spawn_zones() at the end
         print(f"Map generated with {len(self.chunk_manager.no_spawn_zones)} no-spawn zones")
         
-        # Wall renderer (pass tilemap reference)
-        self.wall_renderer = WallRenderer(self.chunk_manager.tilemap)
+        # Load sprites first (before wall renderer)
+        self.sprites = {}
+        self._load_sprites()
+        
+        # Wall renderer (pass tilemap reference and sprites)
+        self.wall_renderer = WallRenderer(self.chunk_manager.tilemap, self.sprites)
         
         # Initialize player at center
         spawn_x = self.world_size // 2
@@ -1402,6 +1533,48 @@ class ShooterGame:
         # Gradual initial enemy spawning (spawn over time instead of all at once)
         self.initial_enemies_to_spawn = 8
         self.initial_spawn_timer = 0
+    
+    def _load_sprites(self):
+        """Load all game sprites from assets folder"""
+        assets_path = os.path.join(os.path.dirname(__file__), 'assets')
+        
+        sprite_configs = {
+            'player': (PLAYER_SPRITE, 20, 20),
+            'enemy_yellow': (ENEMY_YELLOW_SPRITE, 20, 20),
+            'enemy_red': (ENEMY_RED_SPRITE, 20, 20),
+            'enemy_grey': (ENEMY_GREY_SPRITE, 20, 20),
+            'enemy_green': (ENEMY_GREEN_SPRITE, 20, 20),
+            'boss': (BOSS_SPRITE, 60, 60),
+            'bullet_player': (BULLET_PLAYER_SPRITE, 8, 8),
+            'bullet_bounce': (BULLET_BOUNCE_SPRITE, 8, 8),
+            'bullet_pierce': (BULLET_PIERCE_SPRITE, 8, 8),
+            'bullet_enemy': (BULLET_ENEMY_SPRITE, 8, 8),
+            'bullet_cannon': (BULLET_CANNON_SPRITE, 12, 12),
+            'saw': (SAW_SPRITE, 30, 30),
+            'gun': (GUN_SPRITE, 20, 20),
+            'dual_gun': (DUAL_GUN_SPRITE, 20, 20),
+            'powerup_health': (POWERUP_HEALTH_SPRITE, 20, 20),
+            'powerup_damage': (POWERUP_DAMAGE_SPRITE, 20, 20),
+            'powerup_multishot': (POWERUP_MULTISHOT_SPRITE, 20, 20),
+            'powerup_bounce': (POWERUP_BOUNCE_SPRITE, 20, 20),
+            'powerup_pierce': (POWERUP_PIERCE_SPRITE, 20, 20),
+            'powerup_orbital': (POWERUP_ORBITAL_SPRITE, 20, 20),
+            'healthbar_outline': (HEALTHBAR_OUTLINE_SPRITE, 250, 40),
+            'healthbar_fill': (HEALTHBAR_FILL_SPRITE, 240, 30),
+            'wall': (WALL_SPRITE, 40, 40),
+            'corner': (CORNER_SPRITE, 40, 40),
+            'inside_wall': (INSIDE_WALL_SPRITE, 40, 40),
+            'ground': (GROUND_SPRITE, 40, 40),
+        }
+        
+        for key, (filename, width, height) in sprite_configs.items():
+            try:
+                sprite_path = os.path.join(assets_path, filename)
+                if os.path.exists(sprite_path):
+                    img = pygame.image.load(sprite_path).convert_alpha()
+                    self.sprites[key] = pygame.transform.scale(img, (width, height))
+            except Exception:
+                pass  # Fallback to pygame drawing
     
     def spawn_enemy(self):
         """Spawn enemy off-screen or boss in room"""
@@ -1764,11 +1937,10 @@ class ShooterGame:
                     enemy_bullets_to_remove.append(bullet)
                     continue
                 
-                nearby_walls = self.chunk_manager.get_nearby_walls(bullet.x, bullet.y)
-                for wall in nearby_walls:
-                    if wall.collides(bullet.x, bullet.y, bullet.size):
-                        enemy_bullets_to_remove.append(bullet)
-                        break
+                # Check collision with tilemap directly (works even if walls not rendered yet)
+                if self.chunk_manager.tilemap.check_collision(bullet.x, bullet.y, bullet.size):
+                    enemy_bullets_to_remove.append(bullet)
+                    continue
             
             # Batch remove enemy bullets
             self.enemy_bullets = [b for b in self.enemy_bullets if b not in enemy_bullets_to_remove]
@@ -1822,8 +1994,26 @@ class ShooterGame:
             if self.player.health <= 0:
                 return self.show_game_over()
             
-            # Draw
-            self.screen.fill((20, 20, 40))
+            # Draw background
+            if 'ground' in self.sprites:
+                # Tile ground sprite
+                ground_sprite = self.sprites['ground']
+                tile_size = 40
+                start_x = int(self.camera_x // tile_size) * tile_size
+                start_y = int(self.camera_y // tile_size) * tile_size
+                
+                x = start_x
+                while x < start_x + self.width + tile_size:
+                    y = start_y
+                    while y < start_y + self.height + tile_size:
+                        screen_x = int(x - self.camera_x)
+                        screen_y = int(y - self.camera_y)
+                        self.screen.blit(ground_sprite, (screen_x, screen_y))
+                        y += tile_size
+                    x += tile_size
+            else:
+                # Fallback to solid color
+                self.screen.fill((20, 20, 40))
             
             # Draw grid (optimized - only every other line for performance)
             grid_size = 80  # Doubled from 40 to draw half as many lines
@@ -1861,20 +2051,20 @@ class ShooterGame:
             )
             
             # Draw game objects
-            self.player.draw_orbital(self.screen, cam_x, cam_y)
-            self.player.draw(self.screen, cam_x, cam_y)
+            self.player.draw_orbital(self.screen, cam_x, cam_y, self.sprites.get('saw'))
+            self.player.draw(self.screen, cam_x, cam_y, self.sprites)
             
             for bullet in self.bullets:
-                bullet.draw(self.screen, cam_x, cam_y)
+                bullet.draw(self.screen, cam_x, cam_y, self.sprites)
             
             for bullet in self.enemy_bullets:
-                bullet.draw(self.screen, cam_x, cam_y)
+                bullet.draw(self.screen, cam_x, cam_y, self.sprites)
             
             for enemy in self.enemies:
-                enemy.draw(self.screen, cam_x, cam_y)
+                enemy.draw(self.screen, cam_x, cam_y, self.sprites)
             
             for item in self.items:
-                item.draw(self.screen, cam_x, cam_y)
+                item.draw(self.screen, cam_x, cam_y, self.sprites)
             
             for popup in self.popups:
                 popup.draw(self.screen, cam_x, cam_y)
@@ -2003,37 +2193,45 @@ class ShooterGame:
         bar_x = self.width - bar_width - 20
         bar_y = 20
         
-        # Background
-        pygame.draw.rect(self.screen, (40, 40, 60), (bar_x, bar_y, bar_width, bar_height))
+        # Check if we have health bar sprites
+        outline_sprite = self.sprites.get('healthbar_outline')
+        fill_sprite = self.sprites.get('healthbar_fill')
         
-        # Health bar (segmented into 10 hearts/blocks)
-        segment_width = (bar_width - 10) / 10
-        for i in range(10):
-            segment_x = bar_x + 5 + i * segment_width
-            segment_y = bar_y + 5
-            segment_h = bar_height - 10
+        if outline_sprite and fill_sprite:
+            # Use sprites
+            # Draw fill sprite (cropped based on health)
+            health_percent = self.player.health / self.player.max_health
+            fill_width = int(240 * health_percent)
             
-            if i < self.player.health:
-                # Filled health
-                if self.player.health > 6:
-                    color = (50, 255, 50)  # Green
-                elif self.player.health > 3:
-                    color = (255, 200, 50)  # Yellow
-                else:
-                    color = (255, 50, 50)  # Red
-                pygame.draw.rect(self.screen, color, (segment_x, segment_y, segment_width - 2, segment_h))
+            if fill_width > 0:
+                # Crop the fill sprite to show only the health percentage
+                fill_rect = pygame.Rect(0, 0, fill_width, 30)
+                cropped_fill = fill_sprite.subsurface(fill_rect)
+                self.screen.blit(cropped_fill, (bar_x + 5, bar_y + 5))
+            
+            # Draw outline on top
+            self.screen.blit(outline_sprite, (bar_x, bar_y))
+        else:
+            # Fallback to clean bar without text
+            # Background
+            pygame.draw.rect(self.screen, (40, 40, 60), (bar_x, bar_y, bar_width, bar_height))
+            
+            # Health fill
+            health_percent = self.player.health / self.player.max_health
+            fill_width = int((bar_width - 10) * health_percent)
+            
+            if self.player.health > 6:
+                color = (50, 255, 50)  # Green
+            elif self.player.health > 3:
+                color = (255, 200, 50)  # Yellow
             else:
-                # Empty health
-                pygame.draw.rect(self.screen, (80, 80, 100), (segment_x, segment_y, segment_width - 2, segment_h))
-        
-        # Border
-        pygame.draw.rect(self.screen, (200, 200, 220), (bar_x, bar_y, bar_width, bar_height), 3)
-        
-        # Health text
-        health_font = pygame.font.SysFont('segoeui', 20, bold=True)
-        health_text = health_font.render(f'HP: {self.player.health}/{self.player.max_health}', True, (255, 255, 255))
-        text_rect = health_text.get_rect(center=(bar_x + bar_width // 2, bar_y + bar_height // 2))
-        self.screen.blit(health_text, text_rect)
+                color = (255, 50, 50)  # Red
+            
+            if fill_width > 0:
+                pygame.draw.rect(self.screen, color, (bar_x + 5, bar_y + 5, fill_width, bar_height - 10))
+            
+            # Border
+            pygame.draw.rect(self.screen, (200, 200, 220), (bar_x, bar_y, bar_width, bar_height), 3)
     
     def draw_stats_panel(self):
         """Draw player stats panel in top left"""

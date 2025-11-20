@@ -4,6 +4,14 @@ Snake Game - Collect 50 apples
 import pygame
 import sys
 import random
+import os
+
+# Sprite file names (in assets folder)
+SNAKE_HEAD_SPRITE = 'snake_head.png'
+SNAKE_BODY_SPRITE = 'snake_body.png'
+SNAKE_TAIL_SPRITE = 'snake_tail.png'
+WALL_SPRITE = 'wall.png'
+APPLE_SPRITE = 'apple.png'
 
 
 class SnakeGame:
@@ -65,6 +73,55 @@ class SnakeGame:
             '9': [[1,1,1],[1,0,1],[1,1,1],[0,0,1],[1,1,1]],
             'x': [[1,0,1],[1,0,1],[0,1,0],[1,0,1],[1,0,1]],
         }
+        
+        # Load and scale sprites (after pygame display is initialized)
+        self.snake_head_sprite = None
+        self.snake_body_sprite = None
+        self.snake_tail_sprite = None
+        self.wall_sprite = None
+        self.apple_sprite = None
+        
+        assets_path = os.path.join(os.path.dirname(__file__), 'assets')
+        
+        try:
+            head_path = os.path.join(assets_path, SNAKE_HEAD_SPRITE)
+            if os.path.exists(head_path):
+                head_img = pygame.image.load(head_path).convert_alpha()
+                self.snake_head_sprite = pygame.transform.scale(head_img, (self.tile_width, self.tile_height))
+        except Exception as e:
+            pass  # Fallback to pygame drawing
+        
+        try:
+            body_path = os.path.join(assets_path, SNAKE_BODY_SPRITE)
+            if os.path.exists(body_path):
+                body_img = pygame.image.load(body_path).convert_alpha()
+                self.snake_body_sprite = pygame.transform.scale(body_img, (self.tile_width, self.tile_height))
+        except Exception as e:
+            pass  # Fallback to pygame drawing
+        
+        try:
+            tail_path = os.path.join(assets_path, SNAKE_TAIL_SPRITE)
+            if os.path.exists(tail_path):
+                tail_img = pygame.image.load(tail_path).convert_alpha()
+                self.snake_tail_sprite = pygame.transform.scale(tail_img, (self.tile_width, self.tile_height))
+        except Exception as e:
+            pass  # Fallback to pygame drawing
+        
+        try:
+            wall_path = os.path.join(assets_path, WALL_SPRITE)
+            if os.path.exists(wall_path):
+                wall_img = pygame.image.load(wall_path).convert_alpha()
+                self.wall_sprite = pygame.transform.scale(wall_img, (self.tile_width, self.tile_height))
+        except Exception as e:
+            pass  # Fallback to pygame drawing
+        
+        try:
+            apple_path = os.path.join(assets_path, APPLE_SPRITE)
+            if os.path.exists(apple_path):
+                apple_img = pygame.image.load(apple_path).convert_alpha()
+                self.apple_sprite = pygame.transform.scale(apple_img, (self.tile_width, self.tile_height))
+        except Exception as e:
+            pass  # Fallback to pygame drawing
     
     def generate_apple_pos(self):
         while True:
@@ -117,18 +174,24 @@ class SnakeGame:
     def draw_apple(self):
         ax = self.apple_pos[0]
         ay = self.apple_pos[1]
-        radius = min(self.tile_width, self.tile_height) // 2
-        pygame.draw.circle(self.screen, (255, 0, 0), 
-                         (ax + self.tile_width // 2, 
-                          ay + self.tile_height // 2), 
-                         radius)
-        pygame.draw.circle(self.screen, (255, 100, 100), 
-                         (ax + self.tile_width // 2 - 3, 
-                          ay + self.tile_height // 2 - 3), 
-                         3)
-        pygame.draw.rect(self.screen, (0, 150, 0), 
-                        (ax + self.tile_width // 2 - 2, 
-                         ay, 4, 5))
+        
+        if self.apple_sprite:
+            # Use sprite if available
+            self.screen.blit(self.apple_sprite, (ax, ay))
+        else:
+            # Fallback to pygame drawing
+            radius = min(self.tile_width, self.tile_height) // 2
+            pygame.draw.circle(self.screen, (255, 0, 0), 
+                             (ax + self.tile_width // 2, 
+                              ay + self.tile_height // 2), 
+                             radius)
+            pygame.draw.circle(self.screen, (255, 100, 100), 
+                             (ax + self.tile_width // 2 - 3, 
+                              ay + self.tile_height // 2 - 3), 
+                             3)
+            pygame.draw.rect(self.screen, (0, 150, 0), 
+                            (ax + self.tile_width // 2 - 2, 
+                             ay, 4, 5))
     
     def draw_pixel_char(self, char, x, y, pixel_size=3, color=(255, 255, 255)):
         if char not in self.pixel_font:
@@ -269,36 +332,55 @@ class SnakeGame:
             
             # Draw walls
             for wall_pos in self.walls:
-                # Dark gray wall with stone texture
-                pygame.draw.rect(self.screen, (60, 60, 70), 
-                               (wall_pos[0], wall_pos[1], self.tile_width, self.tile_height))
-                # Border for definition
-                pygame.draw.rect(self.screen, (80, 80, 90), 
-                               (wall_pos[0], wall_pos[1], self.tile_width, self.tile_height), 2)
-                # Inner shadow for depth
-                pygame.draw.rect(self.screen, (40, 40, 50), 
-                               (wall_pos[0] + 2, wall_pos[1] + 2, self.tile_width - 4, self.tile_height - 4), 1)
+                if self.wall_sprite:
+                    # Use sprite if available
+                    self.screen.blit(self.wall_sprite, wall_pos)
+                else:
+                    # Fallback to pygame drawing
+                    # Dark gray wall with stone texture
+                    pygame.draw.rect(self.screen, (60, 60, 70), 
+                                   (wall_pos[0], wall_pos[1], self.tile_width, self.tile_height))
+                    # Border for definition
+                    pygame.draw.rect(self.screen, (80, 80, 90), 
+                                   (wall_pos[0], wall_pos[1], self.tile_width, self.tile_height), 2)
+                    # Inner shadow for depth
+                    pygame.draw.rect(self.screen, (40, 40, 50), 
+                                   (wall_pos[0] + 2, wall_pos[1] + 2, self.tile_width - 4, self.tile_height - 4), 1)
             
             # Draw snake on grid - connected segments
             for i, segment in enumerate(self.snake):
-                # Head is bright green, body/tail darker
-                if i == 0:
-                    # Bright head
-                    color = (80, 255, 80)
-                    inner_color = (120, 255, 120)
+                is_head = (i == 0)
+                is_tail = (i == len(self.snake) - 1)
+                
+                # Determine which sprite/color to use
+                if is_head and self.snake_head_sprite:
+                    # Use head sprite
+                    self.screen.blit(self.snake_head_sprite, segment)
+                elif is_tail and self.snake_tail_sprite:
+                    # Use tail sprite
+                    self.screen.blit(self.snake_tail_sprite, segment)
+                elif not is_head and not is_tail and self.snake_body_sprite:
+                    # Use body sprite
+                    self.screen.blit(self.snake_body_sprite, segment)
                 else:
-                    # Darker body - gradient from head to tail
-                    fade = max(0.3, 1.0 - (i * 0.05))
-                    color = (int(50 * fade), int(180 * fade), int(50 * fade))
-                    inner_color = (int(70 * fade), int(200 * fade), int(70 * fade))
-                
-                # Draw connected segment with no gaps
-                pygame.draw.rect(self.screen, color, 
-                               (segment[0], segment[1], self.tile_width, self.tile_height))
-                
-                # Inner highlight for depth
-                pygame.draw.rect(self.screen, inner_color, 
-                               (segment[0] + 2, segment[1] + 2, self.tile_width - 4, self.tile_height - 4))
+                    # Fallback to pygame drawing
+                    if is_head:
+                        # Bright head
+                        color = (80, 255, 80)
+                        inner_color = (120, 255, 120)
+                    else:
+                        # Darker body - gradient from head to tail
+                        fade = max(0.3, 1.0 - (i * 0.05))
+                        color = (int(50 * fade), int(180 * fade), int(50 * fade))
+                        inner_color = (int(70 * fade), int(200 * fade), int(70 * fade))
+                    
+                    # Draw connected segment with no gaps
+                    pygame.draw.rect(self.screen, color, 
+                                   (segment[0], segment[1], self.tile_width, self.tile_height))
+                    
+                    # Inner highlight for depth
+                    pygame.draw.rect(self.screen, inner_color, 
+                                   (segment[0] + 2, segment[1] + 2, self.tile_width - 4, self.tile_height - 4))
             
             self.draw_apple()
             self.draw_score()

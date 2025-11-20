@@ -26,7 +26,7 @@ class MainMenu:
         self.options = [
             {'text': 'Snake Game', 'action': 'snake'},
             {'text': 'Shooter Game', 'action': 'shooter'},
-            {'text': 'Tower Defense', 'action': 'tower'},
+            {'text': 'Rhythm Stacker', 'action': 'rhythm'},
             {'text': 'Portal Animation', 'action': 'portal'},
             {'text': 'Dialogue Box', 'action': 'dialogue'},
             {'text': 'Quit', 'action': 'quit'}
@@ -237,7 +237,6 @@ if __name__ == '__main__':
     # Import from new structure
     from games.snake.snake_game import SnakeGame
     from games.shooter.shooter_game import ShooterGame
-    from games.tower_defense.tower_defense_game import TowerDefenseGame
     from Utils.portal import PortalAnimation
     from Utils.textbox import Textbox
     
@@ -271,9 +270,10 @@ if __name__ == '__main__':
             result = shooter.run()
             if result == 'quit':
                 break
-        elif action == 'tower':
-            tower = TowerDefenseGame(screen)
-            result = tower.run()
+        elif action == 'rhythm':
+            # Import the run function which includes menu and difficulty selection
+            from games.rhythm import rhythm_game
+            result = rhythm_game.run(screen)
             if result == 'quit':
                 break
     
