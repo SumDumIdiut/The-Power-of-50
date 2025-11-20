@@ -16,7 +16,8 @@ class Player:
         self.y = y
         self.size = 20
         self.speed = 5
-        self.health = 1
+        self.health = 10
+        self.max_health = 10
         self.angle = 0
         self.shoot_direction = [0, -1]  # Default direction
         self.has_target = False  # Track if we have a valid target
@@ -123,7 +124,7 @@ class Player:
             self.y = max(self.size, min(self.y, world_size - self.size))
     
     def update_aim(self, enemies, chunk_manager, camera_x, camera_y, screen_width, screen_height):
-        # Auto-aim at nearest enemy (optimized - avoid sqrt)
+        # Auto-aim at nearest enemy (optimized - avoid sqrt) with smooth rotation
         if not enemies:
             self.has_target = False
             return
@@ -141,11 +142,33 @@ class Player:
                 nearest = enemy
         
         if nearest:
+            # Calculate target direction
             dx = nearest.x - self.x
             dy = nearest.y - self.y
             length = math.sqrt(dx*dx + dy*dy)
             if length > 0:
-                self.shoot_direction = [dx/length, dy/length]
+                target_direction = [dx/length, dy/length]
+                
+                # Smooth rotation - interpolate between current and target direction
+                rotation_speed = 0.15  # Lower = smoother, higher = snappier
+                
+                # Calculate current and target angles
+                current_angle = math.atan2(self.shoot_direction[1], self.shoot_direction[0])
+                target_angle = math.atan2(target_direction[1], target_direction[0])
+                
+                # Find shortest rotation direction
+                angle_diff = target_angle - current_angle
+                # Normalize to -pi to pi range
+                while angle_diff > math.pi:
+                    angle_diff -= 2 * math.pi
+                while angle_diff < -math.pi:
+                    angle_diff += 2 * math.pi
+                
+                # Interpolate angle
+                new_angle = current_angle + angle_diff * rotation_speed
+                
+                # Convert back to direction vector
+                self.shoot_direction = [math.cos(new_angle), math.sin(new_angle)]
                 self.has_target = True
         else:
             self.has_target = False
@@ -308,7 +331,7 @@ class Enemy:
             self.speed = random.uniform(0.8, 1.2)
         elif enemy_type == 'shooter':
             self.size = 15
-            self.speed = random.uniform(1.0, 1.5)
+            self.speed = random.uniform(2.0, 2.5)  # Faster movement
         else:  # normal
             self.size = 15
             self.speed = random.uniform(1.5, 3)
@@ -316,15 +339,17 @@ class Enemy:
         self.health = health
         self.max_health = health
         self.shoot_cooldown = 0
-        # Shooter enemies fire much more often
+        # Set shoot rates based on type
         if enemy_type == 'shooter':
-            self.shoot_rate = 90
+            self.shoot_rate = 60  # Green shoots very fast
+        elif enemy_type == 'tank':
+            self.shoot_rate = 480  # Grey has very slow cannon (doubled from 240)
         elif is_final:
             self.shoot_rate = 80
         elif is_boss:
             self.shoot_rate = 100
         else:
-            self.shoot_rate = 200
+            self.shoot_rate = 999999  # Normal (red) doesn't shoot
         self.attack_pattern = 0
         self.pattern_timer = 0
         self.minion_spawn_timer = 0
@@ -336,6 +361,15 @@ class Enemy:
         
         # Cached line of sight (updated every 10 frames for performance)
         self.cached_los = True
+        
+        # Special attack abilities
+        self.dash_cooldown = 0
+        self.dash_rate = 180  # Dash every 3 seconds
+        self.is_dashing = False
+        self.dash_timer = 0
+        self.dash_duration = 15  # Dash lasts 15 frames
+        self.dash_direction = [0, 0]
+        self.dash_trail = []  # Store trail positions for visual effect
     
     def update(self, player_x, player_y, chunk_manager, has_los):
         # Bosses always move, regular enemies only move if they see player
@@ -345,6 +379,53 @@ class Enemy:
         dx = player_x - self.x
         dy = player_y - self.y
         dist_sq = dx * dx + dy * dy
+        
+        # Handle dash ability for fast enemies
+        if self.enemy_type == 'fast':
+            if self.is_dashing:
+                # Add current position to trail
+                self.dash_trail.append((self.x, self.y, self.dash_timer))
+                # Keep only last 10 trail positions
+                if len(self.dash_trail) > 10:
+                    self.dash_trail.pop(0)
+                
+                # Continue dash
+                self.dash_timer -= 1
+                if self.dash_timer <= 0:
+                    self.is_dashing = False
+                    self.dash_trail.clear()
+                else:
+                    # Move in dash direction at high speed
+                    dash_speed = self.speed * 3
+                    new_x = self.x + self.dash_direction[0] * dash_speed
+                    new_y = self.y + self.dash_direction[1] * dash_speed
+                    
+                    nearby_walls = chunk_manager.get_nearby_walls(self.x, self.y)
+                    can_move_x = True
+                    can_move_y = True
+                    
+                    for wall in nearby_walls:
+                        if wall.collides(new_x, self.y, self.size):
+                            can_move_x = False
+                        if wall.collides(self.x, new_y, self.size):
+                            can_move_y = False
+                    
+                    if can_move_x:
+                        self.x = new_x
+                    if can_move_y:
+                        self.y = new_y
+                    return
+            else:
+                # Check if should dash
+                self.dash_cooldown -= 1
+                if self.dash_cooldown <= 0 and dist_sq < 400 * 400:  # Dash when within 400 pixels
+                    self.is_dashing = True
+                    self.dash_timer = self.dash_duration
+                    self.dash_cooldown = self.dash_rate
+                    # Dash towards player
+                    dist = math.sqrt(dist_sq)
+                    self.dash_direction = [dx / dist, dy / dist]
+                    return
         
         if dist_sq > 0:
             dist = math.sqrt(dist_sq)
@@ -366,10 +447,11 @@ class Enemy:
             if can_move_y:
                 self.y = new_y
         
+        # Update shoot cooldown for all shooting enemies
+        if self.shoot_cooldown > 0:
+            self.shoot_cooldown -= 1
+        
         if self.is_boss:
-            if self.shoot_cooldown > 0:
-                self.shoot_cooldown -= 1
-            
             # Update attack pattern timer
             self.pattern_timer += 1
             if self.pattern_timer > 300:  # Change pattern every 5 seconds
@@ -377,53 +459,22 @@ class Enemy:
                 self.pattern_timer = 0
     
     def push_out_of_walls(self, chunk_manager):
-        """Push enemy out of walls if spawned inside"""
-        # Check if enemy is in a wall (check full wall area, not just collision planes)
-        nearby_walls = chunk_manager.get_nearby_walls(self.x, self.y)
+        """Push enemy out of walls if spawned inside (using no-spawn zones)"""
+        tile_size = chunk_manager.tilemap.tile_size
         
-        is_in_wall = False
-        for wall in nearby_walls:
-            # Check if inside the full wall tile area
-            if (self.x > wall.x - self.size and self.x < wall.x + wall.width + self.size and
-                self.y > wall.y - self.size and self.y < wall.y + wall.height + self.size):
-                is_in_wall = True
-                break
+        # Check if current position is in a no-spawn zone
+        grid_x = int(self.x // tile_size)
+        grid_y = int(self.y // tile_size)
         
-        if not is_in_wall:
-            return  # Already in open space
+        if chunk_manager.is_spawn_safe(grid_x, grid_y, safety_radius=1):
+            return  # Already in safe position
         
-        # Try pushing in 8 directions
-        directions = [
-            (1, 0), (-1, 0), (0, 1), (0, -1),
-            (1, 1), (-1, 1), (1, -1), (-1, -1)
-        ]
-        
-        for dx, dy in directions:
-            for push_distance in range(5, 300, 5):  # Try distances from 5 to 300
-                test_x = self.x + dx * push_distance
-                test_y = self.y + dy * push_distance
-                
-                # Get walls at test position
-                test_walls = chunk_manager.get_nearby_walls(test_x, test_y)
-                
-                # Check if this position is clear (check full wall area)
-                is_clear = True
-                for check_wall in test_walls:
-                    if (test_x > check_wall.x - self.size and test_x < check_wall.x + check_wall.width + self.size and
-                        test_y > check_wall.y - self.size and test_y < check_wall.y + check_wall.height + self.size):
-                        is_clear = False
-                        break
-                
-                if is_clear:
-                    self.x = test_x
-                    self.y = test_y
-                    return
-        
-        # If no direction works, teleport to random open position
+        # Not safe - teleport to a guaranteed safe position
+        print(f"Enemy spawned in wall at ({self.x}, {self.y}), teleporting to safe position")
         self.x, self.y = chunk_manager.get_random_open_position()
     
     def can_shoot(self):
-        return (self.is_boss or self.enemy_type == 'shooter') and self.shoot_cooldown == 0
+        return (self.is_boss or self.enemy_type == 'shooter' or self.enemy_type == 'tank') and self.shoot_cooldown == 0
     
     def shoot(self, player_x, player_y):
         self.shoot_cooldown = self.shoot_rate
@@ -440,9 +491,14 @@ class Enemy:
         direction = [dx / dist, dy / dist]
         angle_to_player = math.atan2(direction[1], direction[0])
         
-        # Shooter enemy - simple 1 bullet
+        # Shooter enemy (green) - fast, normal bullets
         if self.enemy_type == 'shooter' and not self.is_boss:
-            bullets.append(EnemyBullet(self.x, self.y, direction))
+            bullets.append(EnemyBullet(self.x, self.y, direction, is_cannon=False))
+            return bullets
+        
+        # Tank enemy (grey) - slow, large cannon bullets
+        if self.enemy_type == 'tank' and not self.is_boss:
+            bullets.append(EnemyBullet(self.x, self.y, direction, is_cannon=True))
             return bullets
         
         # Mini-boss attacks - each boss has unique patterns (OPTIMIZED)
@@ -553,6 +609,18 @@ class Enemy:
         screen_x = self.x - camera_x
         screen_y = self.y - camera_y
         
+        # Draw dash trail for fast enemies
+        if self.enemy_type == 'fast' and self.is_dashing and self.dash_trail:
+            for i, (trail_x, trail_y, timer) in enumerate(self.dash_trail):
+                trail_screen_x = trail_x - camera_x
+                trail_screen_y = trail_y - camera_y
+                # Fade out older trail positions
+                alpha = int(150 * (i / len(self.dash_trail)))
+                trail_size = int(self.size * (0.5 + 0.5 * (i / len(self.dash_trail))))
+                trail_surf = pygame.Surface((trail_size * 2, trail_size * 2), pygame.SRCALPHA)
+                pygame.draw.circle(trail_surf, (255, 200, 50, alpha), (trail_size, trail_size), trail_size)
+                screen.blit(trail_surf, (int(trail_screen_x - trail_size), int(trail_screen_y - trail_size)))
+        
         # Boss glow effect
         if self.is_boss:
             glow_color = (200, 0, 200) if self.is_final else (150, 0, 150)
@@ -599,14 +667,19 @@ class Enemy:
 
 
 class EnemyBullet:
-    __slots__ = ('x', 'y', 'direction', 'speed', 'size')
+    __slots__ = ('x', 'y', 'direction', 'speed', 'size', 'is_cannon')
     
-    def __init__(self, x, y, direction):
+    def __init__(self, x, y, direction, is_cannon=False):
         self.x = x
         self.y = y
         self.direction = direction
-        self.speed = 6
-        self.size = 6
+        self.is_cannon = is_cannon
+        if is_cannon:
+            self.speed = 4  # Slower
+            self.size = 12  # Larger
+        else:
+            self.speed = 6
+            self.size = 6
     
     def update(self):
         self.x += self.direction[0] * self.speed
@@ -615,7 +688,12 @@ class EnemyBullet:
     def draw(self, screen, camera_x, camera_y):
         screen_x = self.x - camera_x
         screen_y = self.y - camera_y
-        pygame.draw.circle(screen, (255, 50, 50), (int(screen_x), int(screen_y)), self.size)
+        if self.is_cannon:
+            # Cannon bullets are grey/dark
+            pygame.draw.circle(screen, (100, 100, 120), (int(screen_x), int(screen_y)), self.size)
+            pygame.draw.circle(screen, (150, 150, 170), (int(screen_x), int(screen_y)), self.size, 2)
+        else:
+            pygame.draw.circle(screen, (255, 50, 50), (int(screen_x), int(screen_y)), self.size)
 
 
 class Item:
@@ -1460,6 +1538,8 @@ class ShooterGame:
             if self.boss_active and self.current_boss not in self.enemies:
                 self.boss_active = False
                 self.current_boss = None
+                # Restore player health to full after defeating boss
+                self.player.health = self.player.max_health
             
             # Gradual initial enemy spawning
             if self.initial_enemies_to_spawn > 0:
@@ -1568,7 +1648,9 @@ class ShooterGame:
                 # Check player collision (use already calculated squared distance)
                 collision_dist = player_size + enemy.size
                 if dist_sq < collision_dist * collision_dist:
-                    self.player.health = 0
+                    # Tank enemies deal 2 damage, others deal 1
+                    damage = 2 if enemy.enemy_type == 'tank' else 1
+                    self.player.health -= damage
                     if enemy in self.enemies:
                         self.enemies.remove(enemy)
                 
@@ -1676,7 +1758,9 @@ class ShooterGame:
                 dist_sq = dx*dx + dy*dy
                 
                 if dist_sq < collision_dist_sq:
-                    self.player.health = 0
+                    # Cannon bullets deal 2 damage, normal bullets deal 1
+                    damage = 2 if bullet.is_cannon else 1
+                    self.player.health -= damage
                     enemy_bullets_to_remove.append(bullet)
                     continue
                 
@@ -1833,6 +1917,9 @@ class ShooterGame:
             # Stats panel in top left
             self.draw_stats_panel()
             
+            # Player health bar in top right
+            self.draw_health_bar()
+            
             # Boss pointer
             if self.boss_active and self.current_boss:
                 self.draw_boss_pointer()
@@ -1908,6 +1995,45 @@ class ShooterGame:
             # Draw arrow
             pygame.draw.polygon(self.screen, color, arrow_points)
             pygame.draw.polygon(self.screen, (255, 255, 255), arrow_points, 2)
+    
+    def draw_health_bar(self):
+        """Draw player health bar in top right"""
+        bar_width = 250
+        bar_height = 40
+        bar_x = self.width - bar_width - 20
+        bar_y = 20
+        
+        # Background
+        pygame.draw.rect(self.screen, (40, 40, 60), (bar_x, bar_y, bar_width, bar_height))
+        
+        # Health bar (segmented into 10 hearts/blocks)
+        segment_width = (bar_width - 10) / 10
+        for i in range(10):
+            segment_x = bar_x + 5 + i * segment_width
+            segment_y = bar_y + 5
+            segment_h = bar_height - 10
+            
+            if i < self.player.health:
+                # Filled health
+                if self.player.health > 6:
+                    color = (50, 255, 50)  # Green
+                elif self.player.health > 3:
+                    color = (255, 200, 50)  # Yellow
+                else:
+                    color = (255, 50, 50)  # Red
+                pygame.draw.rect(self.screen, color, (segment_x, segment_y, segment_width - 2, segment_h))
+            else:
+                # Empty health
+                pygame.draw.rect(self.screen, (80, 80, 100), (segment_x, segment_y, segment_width - 2, segment_h))
+        
+        # Border
+        pygame.draw.rect(self.screen, (200, 200, 220), (bar_x, bar_y, bar_width, bar_height), 3)
+        
+        # Health text
+        health_font = pygame.font.SysFont('segoeui', 20, bold=True)
+        health_text = health_font.render(f'HP: {self.player.health}/{self.player.max_health}', True, (255, 255, 255))
+        text_rect = health_text.get_rect(center=(bar_x + bar_width // 2, bar_y + bar_height // 2))
+        self.screen.blit(health_text, text_rect)
     
     def draw_stats_panel(self):
         """Draw player stats panel in top left"""
