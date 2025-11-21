@@ -57,7 +57,7 @@ echo.
 
 :: Stage changes
 color %MAGENTA%
-echo [1/5] Staging changes...
+echo [1/6] Staging changes...
 git add .
 
 :: Commit
@@ -65,24 +65,44 @@ set /p COMMIT_MSG="Enter commit message (press Enter for default): "
 if "%COMMIT_MSG%"=="" (
     set COMMIT_MSG=Release %TAG%
 )
-echo [2/5] Committing...
+echo [2/6] Committing...
 git commit -m "%COMMIT_MSG%"
 
 :: Push main
-echo [3/5] Pushing to main branch...
+echo [3/6] Pushing to main branch...
 git push origin main
 
 :: Create tag
-echo [4/5] Creating tag %TAG%...
+echo [4/6] Creating tag %TAG%...
 git tag -a %TAG% -m "Release version %VERSION%"
 
 :: Push tag
-echo [5/5] Pushing tag to GitHub...
+echo [5/6] Pushing tag to GitHub...
 git push origin %TAG%
 
-:: Done
-color %GREEN%
+:: Handle rhythm beatmaps
+color %CYAN%
+echo [6/6] Moving rhythm beatmaps to temp folder...
+
+:: Create temp folder
+set TEMP_BEATMAPS=%TEMP%\ThePowerOf50_Beatmaps
+if exist "%TEMP_BEATMAPS%" rmdir /s /q "%TEMP_BEATMAPS%"
+mkdir "%TEMP_BEATMAPS%"
+
+:: Copy all folders from RhythmBeatmaps folder
+for /d %%D in ("RhythmBeatmaps\*") do (
+    xcopy "%%D" "%TEMP_BEATMAPS%\%%~nxD" /E /I /Q
+)
+
 echo.
+color %GREEN%
+echo Beatmaps copied to temp folder:
+echo %TEMP_BEATMAPS%
+echo.
+echo You can now read from these folders.
+echo.
+
+:: Done
 echo ======================================================
 echo                       SUCCESS
 echo ======================================================
@@ -92,7 +112,5 @@ echo GitHub Actions will now:
 echo   1. Build the executable
 echo   2. Create the release
 echo   3. Upload ThePowerOf50.exe
-echo.
-echo Check the GitHub Actions tab to monitor progress.
 echo.
 pause

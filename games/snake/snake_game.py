@@ -282,7 +282,10 @@ class SnakeGame:
                             self.next_direction = (1, 0)
                     elif self.game_over or self.won:
                         if event.key == pygame.K_RETURN:
-                            return 'menu'
+                            if self.game_over:
+                                return 'restart'
+                            else:
+                                return 'won'
             
             if not self.game_over and not self.won:
                 move_timer += 1

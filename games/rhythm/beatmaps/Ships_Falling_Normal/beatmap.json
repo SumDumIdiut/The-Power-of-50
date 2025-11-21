@@ -1,0 +1,54 @@
+{
+  "song_name": "Ships Falling",
+  "artist": "PopplyMC",
+  "difficulty": "Normal",
+  "stars": 3,
+  "bpm": 120,
+  "song_file": "ShipsFalling.MP3",
+  "notes": [
+    {
+      "type": "don",
+      "time": 1.0
+    },
+    {
+      "type": "ka",
+      "time": 1.5
+    },
+    {
+      "type": "don",
+      "time": 2.5
+    },
+    {
+      "type": "ka",
+      "time": 3.0
+    },
+    {
+      "type": "ka",
+      "time": 4.0
+    },
+    {
+      "type": "ka",
+      "time": 4.5
+    },
+    {
+      "type": "don",
+      "time": 5.5
+    },
+    {
+      "type": "don",
+      "time": 5.7
+    },
+    {
+      "type": "ka",
+      "time": 7.0
+    },
+    {
+      "type": "ka",
+      "time": 7.24
+    },
+    {
+      "type": "ka",
+      "time": 7.5
+    }
+  ]
+}
