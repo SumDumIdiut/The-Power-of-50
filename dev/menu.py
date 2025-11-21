@@ -237,6 +237,7 @@ if __name__ == '__main__':
     # Import from new structure
     from games.snake.snake_game import SnakeGame
     from games.shooter.shooter_game import ShooterGame
+    from games.rhythm import rhythm_game
     from Utils.portal import PortalAnimation
     from Utils.textbox import Textbox
     
@@ -271,8 +272,6 @@ if __name__ == '__main__':
             if result == 'quit':
                 break
         elif action == 'rhythm':
-            # Import the run function which includes menu and difficulty selection
-            from games.rhythm import rhythm_game
             result = rhythm_game.run(screen)
             if result == 'quit':
                 break

@@ -8,6 +8,15 @@ import random
 import os
 import sys
 
+# Import beatmap loader for custom maps
+try:
+    from games.rhythm import beatmap_loader
+except ImportError:
+    try:
+        import beatmap_loader
+    except ImportError:
+        beatmap_loader = None
+
 # Sprite file names (in assets folder)
 COVER_1_SPRITE = 'cover_1.png'
 COVER_2_SPRITE = 'cover_2.png'
@@ -25,6 +34,7 @@ NOTE_DON_SPRITE = 'note_don.png'
 NOTE_KA_SPRITE = 'note_ka.png'
 HIT_EFFECT_SPRITE = 'hit_effect.png'
 STAR_SPRITE = 'star.png'
+EMPTY_STAR_SPRITE = 'empty_star.png'
 RANK_S_PLUS_SPRITE = 'rank_s_plus.png'
 RANK_S_SPRITE = 'rank_s.png'
 RANK_A_SPRITE = 'rank_a.png'
@@ -104,6 +114,7 @@ def init_assets():
         # Effects
         ASSETS['hit_effect'] = load_sprite(HIT_EFFECT_SPRITE, (150, 150))
         ASSETS['star'] = load_sprite(STAR_SPRITE, (40, 40))
+        ASSETS['empty_star'] = load_sprite(EMPTY_STAR_SPRITE, (40, 40))
         
         # Rank sprites
         ASSETS['rank_s_plus'] = load_sprite(RANK_S_PLUS_SPRITE, (150, 150))
@@ -210,9 +221,8 @@ class Note:
                 # Don notes have a simple center dot
                 pygame.draw.circle(screen, (255, 200, 200), (int(self.x), int(self.y)), pulse_size // 5)
 
-
 class RhythmGame:
-    def __init__(self, screen, difficulty='Normal'):
+    def __init__(self, screen, difficulty='Normal', song_stars=3, custom_beatmap=None):
         self.display_screen = screen
         screen_width, screen_height = screen.get_size()
         
@@ -231,8 +241,12 @@ class RhythmGame:
         self.font = pygame.font.SysFont('segoeui', 48, bold=True)
         self.small_font = pygame.font.SysFont('segoeui', 32)
         
+        # Custom beatmap data
+        self.custom_beatmap = custom_beatmap
+        
         # Difficulty settings - Expanded to 10 levels
         self.difficulty = difficulty
+        self.song_stars = song_stars  # Total stars for this song (1-10)
         self.difficulty_settings = {
             'Beginner': {'bpm': 60, 'scroll_speed': 250, 'interval': 1.5, 'complexity': 1},
             'Easy': {'bpm': 90, 'scroll_speed': 300, 'interval': 1.1, 'complexity': 1},
@@ -292,8 +306,19 @@ class RhythmGame:
         # Background animation
         self.bg_scroll = 0
         
-        # Generate note pattern based on difficulty
-        self._generate_notes()
+        # Load custom beatmap music if available
+        if self.custom_beatmap and 'song_path' in self.custom_beatmap:
+            try:
+                pygame.mixer.music.load(self.custom_beatmap['song_path'])
+                print(f"Loaded custom song: {self.custom_beatmap['song_path']}")
+            except Exception as e:
+                print(f"Failed to load custom song: {e}")
+        
+        # Generate note pattern based on difficulty OR load from custom beatmap
+        if self.custom_beatmap and 'notes' in self.custom_beatmap:
+            self._load_custom_notes()
+        else:
+            self._generate_notes()
 
     
     def _generate_notes(self):
@@ -399,6 +424,24 @@ class RhythmGame:
                 else:
                     current_time += self.note_spawn_interval
     
+    def _load_custom_notes(self):
+            """Load notes from custom beatmap"""
+            for note_data in self.custom_beatmap['notes']:
+                note_type = note_data['type']
+                # Add 2 second offset like generated notes
+                spawn_time = note_data['time'] + 2.0 
+                self.notes.append(Note(note_type, spawn_time, self.hit_circle_y))
+            
+            # --- FIX: Ensure notes are strictly sorted by spawn time ---
+            # This fixes issues where the notes array in the JSON might not be
+            # perfectly chronological, which can break game logic.
+            self.notes.sort(key=lambda note: note.spawn_time)
+            # -----------------------------------------------------------
+            
+            # Update goal to match number of notes
+            self.goal = len(self.notes)
+            print(f"Loaded {self.goal} notes from custom beatmap")
+
     def _check_hit(self, note_type):
         """Check if player hit a note"""
         # Find the closest note of the correct type near the hit circle
@@ -469,6 +512,13 @@ class RhythmGame:
     
     def run(self):
         running = True
+        
+        # Start custom song if available
+        if self.custom_beatmap and 'song_path' in self.custom_beatmap:
+            try:
+                pygame.mixer.music.play()
+            except Exception as e:
+                print(f"Failed to play custom song: {e}")
         
         while running:
             dt = self.clock.tick(60) / 1000.0
@@ -674,28 +724,6 @@ class RhythmGame:
             pygame.draw.circle(self.screen, DRUM_RED, (self.hit_circle_x, self.hit_circle_y), 8)
     
     def _draw_ui(self):
-        """Draw UI elements"""
-        # Progress
-        progress_text = self.font.render(f'Boxes: {self.total_boxes}/{self.goal}', True, TEXT_COLOR)
-        self.screen.blit(progress_text, (50, 50))
-        
-        # Current stack count
-        stack_text = self.small_font.render(f'Stack: {len(self.current_stack)}/5', True, TEXT_COLOR)
-        self.screen.blit(stack_text, (50, 120))
-        
-        # Instructions
-        instructions = [
-            'SPACE - Add box to stack',
-            'UP ARROW - Push stack (when 5 boxes)',
-        ]
-        
-        y = self.height - 120
-        for instruction in instructions:
-            inst_text = self.small_font.render(instruction, True, (200, 200, 200))
-            self.screen.blit(inst_text, (50, y))
-            y += 40
-    
-    def _draw_ui(self):
         """Draw UI elements (Taiko style)"""
         # Top bar background
         if ASSETS and ASSETS.get('stats_bg'):
@@ -833,77 +861,86 @@ class RhythmGame:
                 pygame.draw.rect(self.screen, (255, 220, 180), banner_rect)
                 pygame.draw.rect(self.screen, (200, 150, 100), banner_rect, 8)
             
-            # Rank (large, centered) - Try sprite first
+            # Rank (large, centered) - Shifted up
+            rank_y = self.height // 2 - 130
             rank_sprite_key = f'rank_{rank.lower().replace("+", "_plus")}'
             if ASSETS and ASSETS.get(rank_sprite_key):
                 rank_sprite = ASSETS[rank_sprite_key]
-                rank_rect = rank_sprite.get_rect(center=(self.width // 2, self.height // 2 - 100))
+                rank_rect = rank_sprite.get_rect(center=(self.width // 2, rank_y))
                 self.screen.blit(rank_sprite, rank_rect)
             else:
                 # Fallback to text
                 rank_text = rank_font.render(rank, True, rank_color)
-                rank_rect = rank_text.get_rect(center=(self.width // 2, self.height // 2 - 100))
+                rank_rect = rank_text.get_rect(center=(self.width // 2, rank_y))
                 
                 # Outline for rank
                 for dx, dy in [(-4, -4), (-4, 4), (4, -4), (4, 4)]:
                     outline = rank_font.render(rank, True, (0, 0, 0))
-                    outline_rect = outline.get_rect(center=(self.width // 2 + dx, self.height // 2 - 100 + dy))
+                    outline_rect = outline.get_rect(center=(self.width // 2 + dx, rank_y + dy))
                     self.screen.blit(outline, outline_rect)
                 
                 self.screen.blit(rank_text, rank_rect)
             
-            # Stats
+            # Stats - Shifted up and tighter spacing
             stats = [
                 f'Score: {self.score}',
                 f'Accuracy: {accuracy:.1f}%',
                 f'Max Combo: {self.max_combo}',
             ]
             
-            y = self.height // 2
+            y = self.height // 2 - 30  # Start higher
             for stat in stats:
                 stat_text = self.font.render(stat, True, TEXT_COLOR)
                 stat_rect = stat_text.get_rect(center=(self.width // 2, y))
                 self.screen.blit(stat_text, stat_rect)
-                y += 60
+                y += 50  # Tighter spacing
             
-            # Stars earned
-            stars_y = y + 20
+            # Stars earned - Show based on song's star rating (1-10)
+            # Align stars on the bottom edge of the banner
+            banner_bottom = self.height // 2 + 200
+            stars_y = banner_bottom - 30  # Shifted up more from bottom edge
             star_size = 40
-            star_spacing = 50
-            start_x = self.width // 2 - (5 * star_spacing) // 2
+            star_spacing = 45
+            total_stars = self.song_stars  # Use song's star rating
+            start_x = self.width // 2 - (total_stars * star_spacing) // 2
             
-            for i in range(5):
+            for i in range(total_stars):
                 star_x = start_x + i * star_spacing
                 
-                # Try to use star sprite
-                if ASSETS and ASSETS.get('star'):
-                    star_sprite = ASSETS['star']
-                    if i >= self.stars_earned:
-                        # Gray out unearned stars
-                        gray_star = star_sprite.copy()
-                        gray_star.fill((100, 100, 100), special_flags=pygame.BLEND_RGBA_MULT)
-                        star_rect = gray_star.get_rect(center=(star_x, stars_y))
-                        self.screen.blit(gray_star, star_rect)
-                    else:
+                # Try to use star sprites
+                if i < self.stars_earned:
+                    # Earned star
+                    if ASSETS and ASSETS.get('star'):
+                        star_sprite = ASSETS['star']
                         star_rect = star_sprite.get_rect(center=(star_x, stars_y))
                         self.screen.blit(star_sprite, star_rect)
-                else:
-                    # Fallback to drawing
-                    star_points = []
-                    for j in range(10):
-                        angle = (j * 36 - 90) * math.pi / 180
-                        radius = 20 if j % 2 == 0 else 8
-                        px = star_x + radius * math.cos(angle)
-                        py = stars_y + radius * math.sin(angle)
-                        star_points.append((px, py))
-                    
-                    if i < self.stars_earned:
+                    else:
+                        # Fallback to drawing filled star
+                        star_points = []
+                        for j in range(10):
+                            angle = (j * 36 - 90) * math.pi / 180
+                            radius = 20 if j % 2 == 0 else 8
+                            px = star_x + radius * math.cos(angle)
+                            py = stars_y + radius * math.sin(angle)
+                            star_points.append((px, py))
                         pygame.draw.polygon(self.screen, (255, 215, 0), star_points)
                         pygame.draw.polygon(self.screen, (200, 150, 0), star_points, 2)
+                else:
+                    # Unearned star
+                    if ASSETS and ASSETS.get('empty_star'):
+                        empty_star_sprite = ASSETS['empty_star']
+                        star_rect = empty_star_sprite.get_rect(center=(star_x, stars_y))
+                        self.screen.blit(empty_star_sprite, star_rect)
                     else:
+                        # Fallback to drawing outline star
+                        star_points = []
+                        for j in range(10):
+                            angle = (j * 36 - 90) * math.pi / 180
+                            radius = 20 if j % 2 == 0 else 8
+                            px = star_x + radius * math.cos(angle)
+                            py = stars_y + radius * math.sin(angle)
+                            star_points.append((px, py))
                         pygame.draw.polygon(self.screen, (150, 150, 150), star_points, 3)
-            
-
             
             # Scale and display
             self.display_screen.fill((0, 0, 0))
@@ -911,7 +948,6 @@ class RhythmGame:
             self.display_screen.blit(scaled_surface, (self.offset_x, self.offset_y))
             pygame.display.flip()
             self.clock.tick(60)
-
 
 def _show_song_select(screen, total_stars=0):
     """Show song selection screen (osu! style)"""
@@ -934,7 +970,7 @@ def _show_song_select(screen, total_stars=0):
     diff_font = pygame.font.SysFont('segoeui', 20, bold=True)
     stars_counter_font = pygame.font.SysFont('segoeui', 32, bold=True)
     
-    # Song list with difficulties
+    # Song list with difficulties (default songs)
     songs = [
         {
             'name': 'Beginner Beat',
@@ -942,7 +978,8 @@ def _show_song_select(screen, total_stars=0):
             'difficulty': 'Beginner',
             'bpm': 60,
             'stars': 1,
-            'color': (150, 255, 150)
+            'color': (150, 255, 150),
+            'custom': False
         },
         {
             'name': 'Easy Rhythm',
@@ -950,7 +987,8 @@ def _show_song_select(screen, total_stars=0):
             'difficulty': 'Easy',
             'bpm': 90,
             'stars': 2,
-            'color': (100, 255, 100)
+            'color': (100, 255, 100),
+            'custom': False
         },
         {
             'name': 'Normal Flow',
@@ -958,7 +996,8 @@ def _show_song_select(screen, total_stars=0):
             'difficulty': 'Normal',
             'bpm': 120,
             'stars': 3,
-            'color': (100, 200, 255)
+            'color': (100, 200, 255),
+            'custom': False
         },
         {
             'name': 'Hard Strike',
@@ -966,7 +1005,8 @@ def _show_song_select(screen, total_stars=0):
             'difficulty': 'Hard',
             'bpm': 150,
             'stars': 4,
-            'color': (255, 200, 100)
+            'color': (255, 200, 100),
+            'custom': False
         },
         {
             'name': 'Expert Combo',
@@ -974,7 +1014,8 @@ def _show_song_select(screen, total_stars=0):
             'difficulty': 'Expert',
             'bpm': 180,
             'stars': 5,
-            'color': (255, 150, 100)
+            'color': (255, 150, 100),
+            'custom': False
         },
         {
             'name': 'Master Blitz',
@@ -982,7 +1023,8 @@ def _show_song_select(screen, total_stars=0):
             'difficulty': 'Master',
             'bpm': 210,
             'stars': 6,
-            'color': (255, 100, 100)
+            'color': (255, 100, 100),
+            'custom': False
         },
         {
             'name': 'Extreme Rush',
@@ -990,7 +1032,8 @@ def _show_song_select(screen, total_stars=0):
             'difficulty': 'Extreme',
             'bpm': 240,
             'stars': 7,
-            'color': (255, 50, 150)
+            'color': (255, 50, 150),
+            'custom': False
         },
         {
             'name': 'Insane Chaos',
@@ -998,7 +1041,8 @@ def _show_song_select(screen, total_stars=0):
             'difficulty': 'Insane',
             'bpm': 270,
             'stars': 8,
-            'color': (200, 50, 255)
+            'color': (200, 50, 255),
+            'custom': False
         },
         {
             'name': 'Demon Storm',
@@ -1006,7 +1050,8 @@ def _show_song_select(screen, total_stars=0):
             'difficulty': 'Demon',
             'bpm': 300,
             'stars': 9,
-            'color': (150, 0, 200)
+            'color': (150, 0, 200),
+            'custom': False
         },
         {
             'name': 'God Mode',
@@ -1014,9 +1059,30 @@ def _show_song_select(screen, total_stars=0):
             'difficulty': 'God',
             'bpm': 350,
             'stars': 10,
-            'color': (255, 215, 0)
+            'color': (255, 215, 0),
+            'custom': False
         },
     ]
+    
+    # Load custom beatmaps if available
+    if beatmap_loader:
+        try:
+            custom_beatmaps = beatmap_loader.scan_beatmaps()
+            for beatmap in custom_beatmaps:
+                songs.append({
+                    'name': beatmap['name'],
+                    'artist': beatmap['artist'],
+                    'difficulty': beatmap['difficulty'],
+                    'bpm': beatmap['bpm'],
+                    'stars': beatmap['stars'],
+                    'color': beatmap['color'],
+                    'custom': True,
+                    'beatmap_data': beatmap  # Store full beatmap data
+                })
+            if custom_beatmaps:
+                print(f"Loaded {len(custom_beatmaps)} custom beatmap(s)")
+        except Exception as e:
+            print(f"Failed to load custom beatmaps: {e}")
     
     selected = 2  # Default to Normal
     bg_scroll = 0
@@ -1057,7 +1123,13 @@ def _show_song_select(screen, total_stars=0):
                     else:
                         target_scroll = selected - 3
                 elif event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
-                    return songs[selected]['difficulty']
+                    # If it's a custom map, return the full beatmap dict
+                    if songs[selected].get('custom'):
+                        return songs[selected]['beatmap_data']
+                    else:
+                        # Otherwise return None and treat it as a default (non-map) song
+                        return None
+
         
         # Draw background
         if ASSETS and ASSETS.get('song_select_bg'):
@@ -1392,24 +1464,28 @@ def _show_main_menu(screen):
 def run(screen):
     """Run the rhythm game with song selection"""
     # Initialize assets
+    pygame.mixer.music.stop()
     init_assets()
     
     # Go straight to song selection (osu! style)
     total_stars = 0  # TODO: Load from save file
     
     while True:
-        difficulty = _show_song_select(screen, total_stars)
+        result = _show_song_select(screen, total_stars)
         
-        if difficulty is None:
+        if result is None:
             return 'menu'
         
-        game = RhythmGame(screen, difficulty)
+        selected_beatmap = result
+        game = RhythmGame(screen, custom_beatmap=selected_beatmap)
+
         result = game.run()
+
+        # ALWAYS stop the music after leaving a song
+        pygame.mixer.music.stop()
         
         if result == 'quit':
             return 'quit'
         
         # Add stars earned to total
         total_stars += game.stars_earned
-        
-        # Continue to song select (loop back)
