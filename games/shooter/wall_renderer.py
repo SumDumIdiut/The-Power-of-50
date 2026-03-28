@@ -1,110 +1,126 @@
 """
-Wall rendering system with tile-based colors
+Shooter Game - Wall Renderer (rewritten)
+
+Seamless tiling via per-cell hash noise — no visible tile borders.
+Per-tile micro-variation in colour so walls read as one organic surface.
+Pre-baked surfaces keyed by (neighbour_count, noise_bucket) for variety.
 """
+from __future__ import annotations
 import pygame
 
 
+def _hash2(x: int, y: int) -> float:
+    n = x * 73856093 ^ y * 19349663
+    n = (n ^ (n >> 13)) * 1664525 + 1013904223
+    return (n & 0xFFFFFF) / 0xFFFFFF
+
+
+_BASE_STYLE: dict[int, tuple] = {
+    4: ((58, 54, 48),  (82, 76, 68),   (40, 37, 32)),
+    3: ((68, 63, 56),  (96, 89, 78),   (48, 44, 38)),
+    2: ((76, 70, 62),  (108,100, 88),  (54, 50, 44)),
+    1: ((84, 78, 69),  (118,110, 96),  (60, 55, 48)),
+    0: ((88, 82, 72),  (122,114,100),  (62, 57, 50)),
+}
+_VARIANTS = 4
+
+
+def _vary(colour: tuple, amount: int) -> tuple:
+    r, g, b = colour
+    return (max(0,min(255,r+amount)), max(0,min(255,g+amount)), max(0,min(255,b+amount)))
+
+
+def _make_base_surface(tile_size, fill, variant=0):
+    """Flat-filled tile with subtle micro-variation — no bevel lines."""
+    shift = (variant - 1) * 4
+    fill  = _vary(fill, shift)
+    surf  = pygame.Surface((tile_size, tile_size))
+    surf.fill(fill)
+    t = tile_size
+    # Very faint interior detail lines for texture, not at edges
+    if variant == 1:
+        mid = t // 2
+        c = _vary(fill, -5)
+        pygame.draw.line(surf, c, (mid, 3), (mid, t - 3), 1)
+    elif variant == 2:
+        mid = t // 2
+        c = _vary(fill, -5)
+        pygame.draw.line(surf, c, (3, mid), (t - 3, mid), 1)
+    elif variant == 3:
+        c = _vary(fill, -4)
+        pygame.draw.line(surf, c, (3, 3), (t - 3, t - 3), 1)
+    return surf
+
+
 class WallRenderer:
-    def __init__(self, tilemap, sprites=None):
-        self.tilemap = tilemap
-        self.sprites = sprites or {}
-        # Pre-create color surfaces for batch rendering
+    UNLOAD_DELAY = 180
+    CHUNK_TILES  = 10
+
+    def __init__(self, tilemap) -> None:
+        self.tilemap   = tilemap
         self.tile_size = tilemap.tile_size
-        self.color_surfaces = {}
-        self._create_color_surfaces()
-        
-        # Track loaded tile regions for gradual unloading
-        self.loaded_tile_regions = {}  # {(chunk_x, chunk_y): frame_last_visible}
-        self.tile_chunk_size = 10  # Group tiles into 10x10 chunks for unloading
-        self.unload_delay = 180  # Frames before unloading (3 seconds at 60fps)
+        # Pre-bake one base surface per (neighbor_count, variant)
+        self._surfaces: dict[tuple[int,int], pygame.Surface] = {}
+        for n, (fill, *_) in _BASE_STYLE.items():
+            for v in range(_VARIANTS):
+                self._surfaces[(n, v)] = _make_base_surface(self.tile_size, fill, v)
+        self._chunk_last_seen: dict[tuple[int,int], int] = {}
 
-    def _create_color_surfaces(self):
-        """Pre-create surfaces for each color to speed up rendering"""
-        colors = {
-            4: (100, 200, 100),  # Green for 4 neighbors
-            3: (200, 100, 100),  # Red for 3 neighbors
-            2: (100, 100, 200),  # Blue for 2 neighbors
-            1: (150, 150, 150),  # Gray for 0-1 neighbors
-            0: (150, 150, 150),
-        }
-        
-        for neighbor_count, color in colors.items():
-            surf = pygame.Surface((self.tile_size, self.tile_size))
-            surf.fill(color)
-            self.color_surfaces[neighbor_count] = surf
+    def _edge_col(self, fill, exposed_top, exposed_left):
+        """Return subtle edge highlight colour for exposed faces only."""
+        return _vary(fill, 18 if (exposed_top or exposed_left) else 0)
 
-    def draw_tiles(self, screen, camera_x, camera_y, screen_width, screen_height, current_frame=0):
-        """Draw visible tiles with colors based on neighbor count (with gradual unloading)"""
-        tile_size = self.tile_size
-        
-        # Calculate visible tile range with small buffer
-        start_x = max(0, int(camera_x // tile_size) - 1)
-        start_y = max(0, int(camera_y // tile_size) - 1)
-        end_x = int((camera_x + screen_width) // tile_size) + 2
-        end_y = int((camera_y + screen_height) // tile_size) + 2
-        
-        # Track which tile chunks are visible this frame
-        visible_chunks = set()
-        
-        # Batch tiles by color for more efficient rendering
-        tiles_by_color = {0: [], 1: [], 2: [], 3: [], 4: []}
-        
-        # Collect visible tiles and mark chunks as visible
-        for gx in range(start_x, end_x):
-            for gy in range(start_y, end_y):
-                # Mark this tile chunk as visible
-                chunk_x = gx // self.tile_chunk_size
-                chunk_y = gy // self.tile_chunk_size
-                chunk_key = (chunk_x, chunk_y)
-                visible_chunks.add(chunk_key)
-                self.loaded_tile_regions[chunk_key] = current_frame
-                
-                if (gx, gy) in self.tilemap.tiles:
-                    tile_info = self.tilemap.tiles[(gx, gy)]
-                    neighbor_count = tile_info["neighbor_count"]
-                    
-                    # Calculate screen position (use integers to align with grid)
-                    screen_x = int(gx * tile_size - camera_x)
-                    screen_y = int(gy * tile_size - camera_y)
-                    
-                    tiles_by_color[neighbor_count].append((screen_x, screen_y))
-        
-        # Draw tiles in batches by color or sprite
-        for neighbor_count, positions in tiles_by_color.items():
-            if positions:
-                # Determine which sprite to use based on neighbor count
-                sprite_key = None
-                if neighbor_count == 4:
-                    sprite_key = 'inside_wall'
-                elif neighbor_count in [2, 3]:
-                    sprite_key = 'wall'
-                elif neighbor_count in [0, 1]:
-                    sprite_key = 'corner'
-                
-                # Use sprite if available, otherwise use color surface
-                if sprite_key and sprite_key in self.sprites:
-                    sprite = self.sprites[sprite_key]
-                    for screen_x, screen_y in positions:
-                        screen.blit(sprite, (screen_x, screen_y))
-                elif neighbor_count in self.color_surfaces:
-                    surf = self.color_surfaces[neighbor_count]
-                    for screen_x, screen_y in positions:
-                        screen.blit(surf, (screen_x, screen_y))
-        
-        # Gradually unload distant tile regions (visual only, collision stays)
-        chunks_to_unload = []
-        for chunk_key, last_frame in list(self.loaded_tile_regions.items()):
-            if current_frame - last_frame > self.unload_delay:
-                chunks_to_unload.append(chunk_key)
-        
-        # Unload old chunks (just remove from tracking, tiles stay in tilemap for collision)
-        for chunk_key in chunks_to_unload:
-            del self.loaded_tile_regions[chunk_key]
+    def draw_tiles(self, screen, camera_x, camera_y, screen_w, screen_h, frame=0):
+        ts    = self.tile_size
+        tiles = self.tilemap.tiles
+        x0 = max(0, int(camera_x // ts) - 1)
+        y0 = max(0, int(camera_y // ts) - 1)
+        x1 = int((camera_x + screen_w) // ts) + 2
+        y1 = int((camera_y + screen_h) // ts) + 2
 
-    def find_adjacent_walls(self, wall, all_walls):
-        """Find walls adjacent to this wall (kept for compatibility)"""
-        return {"top": [], "bottom": [], "left": [], "right": []}
+        # Group by surface key for batched blitting
+        by_style: dict[tuple, list] = {k: [] for k in self._surfaces}
+        # Collect exposed-edge info separately
+        exposed: dict[tuple[int,int], tuple[bool,bool,bool,bool]] = {}
 
-    def draw_wall(self, screen, wall, camera_x, camera_y, adjacent_walls):
-        """Draw a single wall (kept for compatibility but not used)"""
-        pass
+        for gx in range(x0, x1):
+            for gy in range(y0, y1):
+                ck = (gx // self.CHUNK_TILES, gy // self.CHUNK_TILES)
+                self._chunk_last_seen[ck] = frame
+                info = tiles.get((gx, gy))
+                if info is None:
+                    continue
+                n   = info["neighbor_count"]
+                v   = int(_hash2(gx, gy) * _VARIANTS) % _VARIANTS
+                key = (n, v)
+                sx  = int(gx * ts - camera_x)
+                sy  = int(gy * ts - camera_y)
+                by_style[key].append((sx, sy))
+                # Which faces are open (no adjacent solid tile)?
+                open_top    = (gx, gy - 1) not in tiles
+                open_bottom = (gx, gy + 1) not in tiles
+                open_left   = (gx - 1, gy) not in tiles
+                open_right  = (gx + 1, gy) not in tiles
+                exposed[(sx, sy)] = (open_top, open_bottom, open_left, open_right)
+
+        # Blit base surfaces
+        for key, positions in by_style.items():
+            if not positions:
+                continue
+            surf = self._surfaces[key]
+            for sx, sy in positions:
+                screen.blit(surf, (sx, sy))
+
+        # Draw edge highlights only on exposed faces — this kills all interior seams
+        for (sx, sy), (ot, ob, ol, or_) in exposed.items():
+            # Deduce fill from neighbor count stored implicitly — use a neutral highlight
+            light = (120, 112, 96)
+            dark  = (32,  28,  22)
+            if ot:  pygame.draw.line(screen, light, (sx, sy),         (sx+ts-1, sy),         2)
+            if ol:  pygame.draw.line(screen, light, (sx, sy),         (sx, sy+ts-1),         2)
+            if ob:  pygame.draw.line(screen, dark,  (sx, sy+ts-1),   (sx+ts-1, sy+ts-1),    2)
+            if or_: pygame.draw.line(screen, dark,  (sx+ts-1, sy),   (sx+ts-1, sy+ts-1),    2)
+
+        stale = [ck for ck, last in self._chunk_last_seen.items() if frame - last > self.UNLOAD_DELAY]
+        for ck in stale:
+            del self._chunk_last_seen[ck]

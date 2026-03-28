@@ -14,7 +14,7 @@ from Utils.save_manager import save_save, load_save
 
 # Games
 from games.snake.snake_game import run as run_snake
-from games.shooter.shooter_game import ShooterGame
+from games.shooter.shooter_game import run_shooter_menu
 from games.rhythm import beatmap_loader
 from games.rhythm.rhythm_game import run as run_rhythm_game
 
@@ -27,20 +27,16 @@ def draw_centered_text(surface, text, font, color, center):
     surface.blit(txt, rect)
 
 # ------------------------------
-# Snake sequence for dev menu
+# Snake sequence for dev menuwww
 # ------------------------------
 def run_snake_dev(screen):
-    while True:
-        result = run_snake(screen)
-        if result in ('quit','menu'):
-            return
+    return run_snake(screen)
 
 # ------------------------------
 # Shooter sequence for dev menu
 # ------------------------------
 def run_shooter_dev(screen):
-    game = ShooterGame(screen)
-    game.run()
+    return run_shooter_menu(screen)
 
 # ------------------------------
 # Rhythm sequence for dev menu
