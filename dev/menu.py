@@ -19,12 +19,7 @@ import pygame
 # ---------------------------------------------------------------------------
 # Path setup + module loading
 # ---------------------------------------------------------------------------
-if getattr(sys, 'frozen', False):
-    # Running as a PyInstaller bundle — files are extracted to sys._MEIPASS
-    ROOT_DIR = sys._MEIPASS
-else:
-    ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
@@ -45,7 +40,6 @@ def _load_mod(name: str, rel_path: str):
 # import snake_save as a bare module — so snake_save ends up in sys.modules.
 _snake_mod   = _load_mod('snake_game',   'games/snake/snake_game.py')
 _shooter_mod = _load_mod('shooter_game', 'games/shooter/shooter_game.py')
-
 SnakeGame   = _snake_mod.SnakeGame
 ShooterGame = _shooter_mod.ShooterGame
 
@@ -175,6 +169,15 @@ class SnakePage:
         t2 = self._fsub.render('\u2014 C L A S S I C \u2014', True, (40, 120, 55))
         surf.blit(t1, t1.get_rect(center=(cx, cy - 160)))
         surf.blit(t2, t2.get_rect(center=(cx, cy - 100)))
+
+        # Save info line
+        if has and _snake_ss:
+            sd = _snake_ss.load()
+            if sd:
+                info = self._fsm.render(
+                    f"  {sd.get('score', 0)} apples \u00b7 seed {sd.get('seed', '?')}",
+                    True, (100, 160, 110))
+                surf.blit(info, info.get_rect(center=(cx, cy - 66)))
 
         self._draw_btn(surf, self._new_r, '\u25b6  NEW GAME',  self._new_r.collidepoint(mx, my))
         self._draw_btn(surf, self._con_r, '\u27f2  CONTINUE',  self._con_r.collidepoint(mx, my), active=has)
@@ -469,7 +472,7 @@ def run(screen: pygame.Surface) -> str:
 # ---------------------------------------------------------------------------
 if __name__ == '__main__':
     pygame.init()
-    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+    screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF)
     pygame.display.set_caption('The Power of 50')
     run(screen)
     pygame.quit()

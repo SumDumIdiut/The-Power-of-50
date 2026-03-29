@@ -1083,6 +1083,7 @@ class Enemy:
         self.shoot_cooldown    = random.randint(0, self.shoot_rate)
         self.attack_pattern    = 0
         self.pattern_timer     = 0
+        self.phase_len         = 250 if is_final else 300   # overridden by spawn for scaling
         self.minion_spawn_timer= 0
         self.frames_far        = 0
         self.cached_los        = True
@@ -1137,16 +1138,21 @@ class Enemy:
                 self._move(dx/dist * self.speed * 0.3, dy/dist * self.speed * 0.3, chunk_manager)
         else:
             if dist_sq > 0:
-                self._move(dx/dist * self.speed, dy/dist * self.speed, chunk_manager)
+                spd = self.speed
+                # Enrage: move faster below 25 % HP
+                if self.is_boss and self.health < self.max_health * 0.25:
+                    spd *= 1.7
+                self._move(dx/dist * spd, dy/dist * spd, chunk_manager)
 
         if self.shoot_cooldown > 0:
             self.shoot_cooldown -= 1
 
         if self.is_boss:
             self.pattern_timer += 1
-            phase_len = 250 if self.is_final else 300
-            if self.pattern_timer > phase_len:
-                n_patterns = 5 if self.is_final else 4
+            # Enrage: cycle attack phases faster below 25 % HP
+            effective_phase = max(80, self.phase_len // 2) if self.health < self.max_health * 0.25 else self.phase_len
+            n_patterns = 5 if self.is_final else 4
+            if self.pattern_timer > effective_phase:
                 self.attack_pattern = (self.attack_pattern + 1) % n_patterns
                 self.pattern_timer  = 0
 
@@ -1521,11 +1527,16 @@ class ShooterGame:
                  save_data: dict | None = None):
         self.display_screen = screen
         disp_w, disp_h = screen.get_size()
-        self.screen = pygame.Surface((VIEWPORT_W, VIEWPORT_H))
+        # Use .convert() so pixel format matches the display — faster blitting every frame
+        self.screen = pygame.Surface((VIEWPORT_W, VIEWPORT_H)).convert()
         scale = min(disp_w/VIEWPORT_W, disp_h/VIEWPORT_H)
         self.scale    = scale
         self.offset_x = int((disp_w - VIEWPORT_W*scale)//2)
         self.offset_y = int((disp_h - VIEWPORT_H*scale)//2)
+        # Pre-allocate the scaled output surface so _flip() never allocates one per frame
+        _sw = int(VIEWPORT_W * scale)
+        _sh = int(VIEWPORT_H * scale)
+        self._scaled_surf = pygame.Surface((_sw, _sh)).convert()
         self.clock    = pygame.time.Clock()
         self.font     = pygame.font.SysFont('segoeui', 26, bold=True)
 
@@ -1629,11 +1640,10 @@ class ShooterGame:
 
     def _flip(self):
         """Composite viewport surface to display and flip."""
+        # 3-arg scale writes into the pre-allocated surface — no allocation per frame
+        pygame.transform.scale(self.screen, self._scaled_surf.get_size(), self._scaled_surf)
         self.display_screen.fill((0, 0, 0))
-        scaled = pygame.transform.scale(
-            self.screen,
-            (int(VIEWPORT_W * self.scale), int(VIEWPORT_H * self.scale)))
-        self.display_screen.blit(scaled, (self.offset_x, self.offset_y))
+        self.display_screen.blit(self._scaled_surf, (self.offset_x, self.offset_y))
         pygame.display.flip()
 
     # ------------------------------------------------------------------
@@ -1803,15 +1813,31 @@ class ShooterGame:
             bx, by = self.chunk_manager.get_safe_pos_near_room()
 
             if is_mega:
-                # Mega boss — uses final-boss draw style; HP scales with kills
-                mega_hp = 3000 + self.kills * 60
-                boss = Enemy(bx, by, mega_hp, is_boss=True, is_final=True)
+                # HP: starts at 3 000, +100 per kill
+                mega_hp  = 3000 + self.kills * 100
+                boss     = Enemy(bx, by, mega_hp, is_boss=True, is_final=True)
+                # Speed: +0.8 % per kill, capped at 2.5×
+                spd_mult = min(2.5, 1.0 + self.kills * 0.008)
+                boss.speed      = random.uniform(0.9, 1.5) * spd_mult
+                # Fire rate: starts at 60 frames, minimum 20
+                boss.shoot_rate = max(20, 60 - self.kills // 4)
+                # Phase length: starts at 250, minimum 100
+                boss.phase_len  = max(100, 250 - self.kills)
             else:
                 # Mini boss — cycle through IDs 1-8
-                bid = ((self.kills // MINI_BOSS_INTERVAL - 1) % 8) + 1
-                # HP ramps up with kill count
-                mini_hp = 500 + tier * 180
-                boss = Enemy(bx, by, mini_hp, is_boss=True, boss_id=bid)
+                bid     = ((self.kills // MINI_BOSS_INTERVAL - 1) % 8) + 1
+                # HP: starts at 400, +150 per tier (tier = kills // 10)
+                mini_hp = 400 + tier * 150
+                boss    = Enemy(bx, by, mini_hp, is_boss=True, boss_id=bid)
+                # Speed: +1 % per kill, capped at 2.2×
+                spd_mult = min(2.2, 1.0 + self.kills * 0.010)
+                boss.speed      = random.uniform(0.7, 1.3) * spd_mult
+                # Fire rate: starts at 90 frames, minimum 30
+                boss.shoot_rate = max(30, 90 - self.kills // 3)
+                # Phase length: starts at 300, minimum 120
+                boss.phase_len  = max(120, 300 - self.kills)
+                # Size grows slightly with kills (capped at 46)
+                boss.size       = min(46, 34 + self.kills // 15)
 
             if not self.chunk_manager.is_pos_safe(boss.x, boss.y, boss.size):
                 boss.x, boss.y = self.chunk_manager.get_safe_pos_near_room()
@@ -1976,29 +2002,52 @@ class ShooterGame:
     def _update_player_bullets(self):
         ws = WORLD_SIZE
         keep = []
-        if len(self.bullets) > 80:
-            self.bullets = self.bullets[-80:]
-        # Cache nearby walls per chunk so bullets sharing a chunk only pay once
+        if len(self.bullets) > 500:
+            self.bullets = self.bullets[-500:]
+
+        # Sub-step size must be smaller than Wall.PLANE_THICKNESS (5 px) to
+        # prevent tunnelling.  ceil(speed / 4) steps keeps each step ≤ 4 px.
+        _STEP = 4.0
         cs = self.chunk_manager.chunk_size
         wall_cache: dict[tuple[int,int], list] = {}
+
         for b in self.bullets:
-            b.update()
-            if b.expired() or b.x<0 or b.x>ws or b.y<0 or b.y>ws:
+            b.lifetime -= 1
+            if b.lifetime <= 0:
                 continue
-            ck = (int(b.x) // cs, int(b.y) // cs)
-            if ck not in wall_cache:
-                wall_cache[ck] = self.chunk_manager.get_nearby_walls(b.x, b.y)
+
+            steps = max(1, math.ceil(b.speed / _STEP))
+            sdx   = b.dir[0] * b.speed / steps
+            sdy   = b.dir[1] * b.speed / steps
+
             hit_wall = False
-            for wall in wall_cache[ck]:
-                if wall.collides(b.x, b.y, b.size):
-                    if b.bounces_left > 0 and b.try_bounce(wall, self.frame):
-                        b.x += b.dir[0]*b.speed*2
-                        b.y += b.dir[1]*b.speed*2
-                    else:
-                        hit_wall = True
+            for _ in range(steps):
+                b.x += sdx
+                b.y += sdy
+
+                if b.x < 0 or b.x > ws or b.y < 0 or b.y > ws:
+                    hit_wall = True
                     break
+
+                ck = (int(b.x) // cs, int(b.y) // cs)
+                if ck not in wall_cache:
+                    wall_cache[ck] = self.chunk_manager.get_nearby_walls(b.x, b.y)
+
+                for wall in wall_cache[ck]:
+                    if wall.collides(b.x, b.y, b.size):
+                        if b.bounces_left > 0 and b.try_bounce(wall, self.frame):
+                            b.x += b.dir[0] * b.speed * 2
+                            b.y += b.dir[1] * b.speed * 2
+                        else:
+                            hit_wall = True
+                        break
+
+                if hit_wall:
+                    break
+
             if not hit_wall:
                 keep.append(b)
+
         self.bullets = keep
 
     # ------------------------------------------------------------------
@@ -2162,8 +2211,8 @@ class ShooterGame:
         p  = self.player
         ws = WORLD_SIZE
         cdist_sq = (p.SIZE + 7) ** 2
-        if len(self.enemy_bullets) > 60:
-            self.enemy_bullets = self.enemy_bullets[-60:]
+        if len(self.enemy_bullets) > 5000:
+            self.enemy_bullets = self.enemy_bullets[-5000:]
         keep = []
         for b in self.enemy_bullets:
             b.update(p.x, p.y)
@@ -2213,39 +2262,52 @@ class ShooterGame:
         scr = self.screen
         cx, cy = self.cam_x, self.cam_y
         p = self.player
+        VW, VH = VIEWPORT_W, VIEWPORT_H
+
+        # Frustum helper — True if world-space (wx, wy) is within the viewport + margin
+        def vis(wx, wy, m=24):
+            sx = wx - cx; sy = wy - cy
+            return -m < sx < VW + m and -m < sy < VH + m
 
         # Seamless floor
         self._draw_floor()
 
         # Tiles
-        self.wall_renderer.draw_tiles(scr, cx, cy, VIEWPORT_W, VIEWPORT_H, self.frame)
+        self.wall_renderer.draw_tiles(scr, cx, cy, VW, VH, self.frame)
 
         # Orbital + Player
         p.draw_orbital(scr, cx, cy, self.frame)
         p.draw_magnet(scr, cx, cy)
         p.draw(scr, cx, cy, self.frame)
 
-        # Bullets
+        # Player bullets — skip anything outside the viewport
         for b in self.bullets:
-            b.draw(scr, cx, cy)
-        for b in self.enemy_bullets:
-            b.draw(scr, cx, cy)
+            if vis(b.x, b.y):
+                b.draw(scr, cx, cy)
 
-        # Enemies
+        # Enemy bullets — same cull
+        for b in self.enemy_bullets:
+            if vis(b.x, b.y):
+                b.draw(scr, cx, cy)
+
+        # Enemies and bosses — always drawn (no culling)
         for e in self.enemies:
             e.draw(scr, cx, cy)
 
-        # Items
+        # Items — cull with a larger margin so magnetised items just off-screen still appear smoothly
         for item in self.items:
-            item.draw(scr, cx, cy)
+            if vis(item.x, item.y, m=60):
+                item.draw(scr, cx, cy)
 
-        # Particles
+        # Particles — tight cull, they're tiny
         for part in self.particles:
-            part.draw(scr, cx, cy)
+            if vis(part.x, part.y, m=8):
+                part.draw(scr, cx, cy)
 
-        # Popups
+        # Popups — generous margin so text isn't clipped mid-float
         for popup in self.popups:
-            popup.draw(scr, cx, cy)
+            if vis(popup.x, popup.y, m=80):
+                popup.draw(scr, cx, cy)
 
         # Vignette (dark-edge overlay, pre-cached)
         scr.blit(self._vignette, (0, 0))
