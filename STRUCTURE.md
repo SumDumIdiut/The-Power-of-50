@@ -1,83 +1,69 @@
 # Project Structure
 
-## Current Structure
-
 ```
 The Power of 50/
 │
-├── main.py                    # Main menu launcher
-├── run.bat                    # Windows shortcut
+├── .github/
+│   └── workflows/
+│       └── build-release.yml   # Build and publish on version tag push
 │
-├── games/                     # Games (2 games)
+├── Assets/
+│   └── Logo Test.png
+│
+├── dev/
+│   └── menu.py                 # Dev launcher — runs Snake or Shooter directly
+│
+├── games/
+│   ├── __init__.py
 │   ├── snake/
+│   │   ├── __init__.py
 │   │   ├── snake_game.py
+│   │   ├── snake_save.py
 │   │   ├── helpers.py
 │   │   ├── assets/
 │   │   └── README.md
 │   └── shooter/
+│       ├── __init__.py
 │       ├── shooter_game.py
+│       ├── shooter_save.py
+│       ├── tilemap.py
+│       ├── wall_renderer.py
 │       ├── helpers.py
-│       ├── assets/
 │       └── README.md
 │
-├── Utils/                     # Utilities (not games)
-│   ├── portal.py             # Portal animation
-│   ├── portal_helpers.py     # Physics helpers
-│   ├── textbox.py            # Dialogue system
+├── Utils/
 │   ├── __init__.py
+│   ├── textbox.py              # Dialogue system
+│   ├── save_manager.py         # Save/load helpers
 │   └── README.md
 │
-└── dev/                       # Development tools
-    ├── menu.py               # Dev menu
-    └── README.md
+├── build_exe.py                # PyInstaller build script
+├── build.bat                   # Windows build helper
+├── create_release.bat          # Tag, push, and trigger release
+├── requirements.txt
+└── README.md
 ```
 
-## Games vs Utils
+## Games
 
-### Games (in `games/`)
-- **Snake**: Collect 50 apples
-- **Shooter**: Kill 50 enemies
+| Game    | Entry point                     | Goal              |
+|---------|---------------------------------|-------------------|
+| Snake   | `games/snake/snake_game.py`     | Collect 50 apples |
+| Shooter | `games/shooter/shooter_game.py` | Kill 50 enemies   |
 
-### Utils (in `Utils/`)
-- **Portal**: Interactive animation (not a game)
-- **Textbox**: Dialogue system
-- **Portal Helpers**: Physics utilities
+## Utils
 
-## Why Portal is a Utility
+| Module           | Purpose                          |
+|------------------|----------------------------------|
+| `textbox.py`     | Animated dialogue / typewriter   |
+| `save_manager.py`| JSON save and load helpers       |
 
-Portal is an **animation/demo**, not a game with a goal. It's a reusable component that demonstrates:
-- Physics simulation
-- Particle effects
-- Interactive animations
+## Adding a New Game
 
-It belongs in Utils because it's a **tool/component**, not a standalone game.
+1. Create `games/<name>/` with at minimum `__init__.py` and `<name>_game.py`
+2. Export a `run(screen)` function from `<name>_game.py`
+3. Import and wire it up in `dev/menu.py`
 
-## How to Use
+## Adding a New Utility
 
-### Play Games
-```bash
-python main.py
-```
-
-### Test with Dev Menu
-```bash
-python dev/menu.py
-```
-
-### Use Utilities
-```python
-from Utils.portal import PortalAnimation
-from Utils.textbox import Textbox
-
-# Use in your own games
-```
-
-## Adding New Content
-
-### New Game
-Add to `games/[gamename]/`
-
-### New Utility
-Add to `Utils/`
-
-Portal is correctly categorized as a utility! ✅
+Add a `.py` file to `Utils/` and update `Utils/README.md`.

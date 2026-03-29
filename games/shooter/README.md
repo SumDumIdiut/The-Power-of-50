@@ -1,29 +1,36 @@
-# Top-Down Shooter
+# Shooter
 
 ## Objective
-Eliminate 50 enemies to win!
+Kill 50 enemies to win.
 
 ## Controls
-- **WASD / Arrow Keys**: Move
-- **IJKL**: Manual aim (optional)
-- **Auto-aim**: Automatically targets visible enemies
-- **ESC**: Return to main menu
+| Input             | Action                    |
+|-------------------|---------------------------|
+| WASD / Arrow Keys | Move                      |
+| IJKL              | Manual aim (optional)     |
+| Auto-aim          | Targets visible enemies   |
+| ESC               | Quit to menu              |
 
 ## Gameplay
-- Navigate through procedurally generated dungeons
-- Auto-shoot at enemies in line of sight
-- Collect power-ups: Fire Rate, Multi-Shot, Damage
-- Enemy difficulty scales with your progress
-- ONE HIT = DEATH - avoid enemy contact!
+- Navigate procedurally generated dungeons
+- Auto-fire shoots at enemies in line of sight
+- **One hit = death** — avoid all enemy contact
+- Enemy health and spawn rate scale with your kill count
+- Boss enemies appear every 10 kills
+- Collect power-up drops to upgrade your weapon
 
-## Features
-- Procedural dungeon generation with rooms and corridors
-- Line-of-sight based combat
-- Scaling enemy health and spawn rates
-- Boss enemies every 10 kills
-- Item drops for upgrades
+## Power-ups
+| Drop        | Effect              |
+|-------------|---------------------|
+| Fire Rate   | Shoot faster        |
+| Multi-Shot  | Fire extra bullets  |
+| Damage      | Increase bullet damage |
 
 ## Files
-- `shooter_game.py`: Main game logic
-- `helpers.py`: Math and collision helper functions
-- `assets/`: Game assets (currently empty)
+| File               | Purpose                              |
+|--------------------|--------------------------------------|
+| `shooter_game.py`  | Main game logic                      |
+| `shooter_save.py`  | Save/load best score                 |
+| `tilemap.py`       | Procedural dungeon generation        |
+| `wall_renderer.py` | Tile rendering and collision         |
+| `helpers.py`       | Math and collision helper functions  |

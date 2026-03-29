@@ -1,164 +1,98 @@
-# The Power of 50 🎮
+# The Power of 50
 
-A collection of three arcade-style games where the goal is always to reach 50!
+A collection of arcade-style games where the goal is always to reach 50.
 
-## 🎯 Games Included
+## Games
 
-### 🐍 Snake Game
-Classic snake gameplay - eat 50 apples to win!
-- Smooth controls
+### Snake
+Classic snake — eat 50 apples to win.
 - Progressive difficulty
-- Score tracking
+- Score tracking and high score saving
 
-### 🔫 Shooter Game
-Top-down shooter with procedurally generated levels using a tilemap system.
+### Shooter
+Top-down shooter with procedurally generated dungeons.
 - Kill 50 enemies to win
-- Color-coded tiles (Green/Red/Blue based on neighbors)
+- Auto-aim and auto-fire
 - Boss battles every 10 kills
-- Power-ups and upgrades
-- Large open arenas
+- Power-up drops (fire rate, multi-shot, damage)
+- One hit = death
 
-### 🗼 Tower Defense
-Defend your base against waves of enemies!
-- Strategic tower placement
-- Multiple tower types
-- Wave-based gameplay
+## Download & Play
 
-## 📥 Download & Play
-
-### Option 1: Download Executable (Recommended)
+**Option 1 — Executable (recommended):**
 1. Go to [Releases](../../releases)
-2. Download the latest `ThePowerOf50.exe`
-3. Run it - no installation needed!
+2. Download `ThePowerOf50.exe`
+3. Run it — no installation needed
 
-### Option 2: Run from Source
+**Option 2 — Run from source:**
 ```bash
-# Clone the repository
 git clone https://github.com/YOUR_USERNAME/the-power-of-50.git
 cd the-power-of-50
-
-# Install dependencies
 pip install -r requirements.txt
-
-# Run the game
 python dev/menu.py
 ```
 
-## 🛠️ Development
+## Controls
 
-### Project Structure
+| Game    | Action       | Input            |
+|---------|--------------|------------------|
+| Snake   | Move         | Arrow Keys       |
+| Snake   | Quit to menu | ESC              |
+| Shooter | Move         | WASD / Arrow Keys|
+| Shooter | Manual aim   | IJKL (optional)  |
+| Shooter | Quit to menu | ESC              |
+
+## Project Structure
+
 ```
 The Power of 50/
-├── .github/workflows/    # GitHub Actions for automated builds
-├── Assets/              # Global assets (logo, etc.)
-├── dev/                 # Development entry point
-│   └── menu.py         # Main menu system
-├── games/              # Game modules
-│   ├── snake/          # Snake game
-│   ├── shooter/        # Shooter game with tilemap
-│   │   ├── tilemap.py
-│   │   └── wall_renderer.py
-│   └── tower_defense/  # Tower Defense game
-├── Utils/              # Shared utilities
-│   ├── portal.py       # Portal animation
-│   └── textbox.py      # Dialogue system
-├── build_exe.py        # Build script for executable
-└── requirements.txt    # Python dependencies
+├── .github/workflows/    # Automated build and release
+├── Assets/               # Shared assets (logo, etc.)
+├── dev/
+│   └── menu.py           # Dev launcher
+├── games/
+│   ├── snake/            # Snake game
+│   └── shooter/          # Shooter game
+├── Utils/
+│   ├── textbox.py        # Dialogue system
+│   └── save_manager.py   # Save/load helpers
+├── build_exe.py          # PyInstaller build script
+├── build.bat             # Windows build helper
+├── create_release.bat    # Tag and release helper
+└── requirements.txt
 ```
 
-### Building the Executable
+## Building
 
 ```bash
-# Install build dependencies
-pip install pyinstaller
+# Quick build (Windows)
+build.bat
 
-# Build the executable
+# Or directly
 python build_exe.py
-
-# Output will be in dist/ThePowerOf50.exe
+# Output: dist/ThePowerOf50.exe
 ```
 
-### Creating a Release
+See [BUILD_INSTRUCTIONS.md](BUILD_INSTRUCTIONS.md) for more detail.
 
-Releases are automated via GitHub Actions:
+## Releasing
 
-1. **Create a version tag:**
-   ```bash
-   git tag -a v1.0.0 -m "Release version 1.0.0"
-   git push origin v1.0.0
-   ```
+```bash
+create_release.bat
+```
 
-2. **GitHub Actions will automatically:**
-   - Build the executable
-   - Create a GitHub release
-   - Upload the .exe file
-   - Generate release notes
+Pushes a version tag which triggers GitHub Actions to build and publish the release automatically. See [SETUP_GITHUB.md](SETUP_GITHUB.md) for first-time setup.
 
-## 🎨 Features
+## Tech Stack
 
-### Shooter Game Tilemap System
-- **Procedural Generation**: Rooms and corridors generated algorithmically
-- **Color-Coded Tiles**: 
-  - 🟢 Green: 4 neighbors (interior walls)
-  - 🔴 Red: 3 neighbors (edges)
-  - 🔵 Blue: 2 neighbors (corners)
-- **Smart Collision**: Only collides on exposed tile edges
-- **Performance Optimized**: Merged tiles and chunk-based rendering
+- Python 3.12
+- Pygame 2.6+
+- PyInstaller (executable builds)
+- GitHub Actions (automated releases)
 
-## 🔧 Technologies
+## Requirements
 
-- **Python 3.12**
-- **Pygame 2.6+**
-- **PyInstaller** (for executable builds)
-- **GitHub Actions** (for automated releases)
-
-## 📋 Requirements
-
-### For Playing (Executable)
-- Windows 10/11
-- ~35 MB disk space
-
-### For Development
-- Python 3.11+
-- Pygame 2.0+
-- See `requirements.txt` for full list
-
-## 🤝 Contributing
-
-Contributions are welcome! Feel free to:
-- Report bugs
-- Suggest features
-- Submit pull requests
-
-## 📝 License
-
-This project is open source and available under the MIT License.
-
-## 🎮 Controls
-
-### Snake Game
-- Arrow Keys: Move
-- ESC: Return to menu
-
-### Shooter Game
-- WASD: Move
-- Mouse: Auto-aim
-- Auto-fire enabled
-- ESC: Return to menu
-
-### Tower Defense
-- Mouse: Place towers
-- Click: Select/Place
-- ESC: Return to menu
-
-## 🚀 Roadmap
-
-- [ ] Add more game modes
-- [ ] Implement high score system
-- [ ] Add sound effects and music
-- [ ] Create level editor for shooter
-- [ ] Add multiplayer support
-
----
-
-Made with ❤️ using Python and Pygame
+| Use case    | Requirements                    |
+|-------------|---------------------------------|
+| Playing     | Windows 10/11, ~50–100 MB space |
+| Development | Python 3.11+, `pip install -r requirements.txt` |

@@ -3,7 +3,7 @@ name: Build and Release
 on:
   push:
     tags:
-      - 'v*'  # Triggers on version tags like v1.0.0, v1.1.0, etc.
+      - 'v*'
 
 permissions:
   contents: write
@@ -11,51 +11,45 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
-    
+
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
-    
+      uses: actions/checkout@v4
+
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-    
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-    
+
     - name: Build executable
       run: python build_exe.py
-    
+
     - name: Get version from tag
       id: get_version
-      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
       shell: bash
-    
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         name: The Power of 50 ${{ steps.get_version.outputs.VERSION }}
         body: |
-          ## The Power of 50 - Release ${{ steps.get_version.outputs.VERSION }}
-          
-          ### What's Included:
-          - 🐍 Snake Game
-          - 🔫 Shooter Game with Tilemap System
-          - 🗼 Tower Defense Game
-          
+          ## The Power of 50 — ${{ steps.get_version.outputs.VERSION }}
+
+          ### Games:
+          - Snake
+          - Shooter
+
           ### Download:
-          Download `ThePowerOf50.exe` below and run it - no installation required!
-          
-          ### File Size:
-          ~35 MB (includes Python runtime and all dependencies)
-          
+          Download `ThePowerOf50.exe` below and run it — no installation required.
+
           ### System Requirements:
           - Windows 10/11
-          - No additional software needed
-        files: |
-          dist/ThePowerOf50.exe
+        files: dist/ThePowerOf50.exe
         draft: false
         prerelease: false

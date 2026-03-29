@@ -1,7 +1,7 @@
 """
 Snake run save — stores in-progress game state.
 
-Save file: games/snake/snake_save.json
+Save file: %APPDATA%/ThePowerOf50/snake_save.json
 
 Save data format:
 {
@@ -22,8 +22,13 @@ import os
 import random
 import string
 
-_DIR      = os.path.dirname(os.path.abspath(__file__))
-SAVE_PATH = os.path.join(_DIR, 'snake_save.json')
+_APPDATA  = os.environ.get('APPDATA') or os.path.expanduser('~')
+_SAVE_DIR = os.path.join(_APPDATA, 'ThePowerOf50')
+SAVE_PATH = os.path.join(_SAVE_DIR, 'snake_save.json')
+
+
+def _ensure_dir() -> None:
+    os.makedirs(_SAVE_DIR, exist_ok=True)
 
 
 def new_seed() -> str:
@@ -55,6 +60,7 @@ def load() -> dict | None:
 
 
 def save(data: dict) -> None:
+    _ensure_dir()
     try:
         with open(SAVE_PATH, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2)

@@ -1,6 +1,5 @@
 """
-Build script to compile The Power of 50 into an executable
-Bundles assets, utils, and custom beatmaps only
+Build script to compile The Power of 50 into an executable.
 """
 import PyInstaller.__main__
 import os
@@ -8,13 +7,6 @@ import sys
 
 project_dir = os.path.dirname(os.path.abspath(__file__))
 
-# Folders to include
-assets_folder = os.path.join(project_dir, "Assets")
-games_folder = os.path.join(project_dir, "games")
-utils_folder = os.path.join(project_dir, "Utils")
-custom_beatmaps_folder = os.path.join(games_folder, "rhythm", "beatmaps")  # Only custom maps
-
-# PyInstaller arguments
 args = [
     os.path.join(project_dir, "dev", "menu.py"),
     "--name=ThePowerOf50",
@@ -23,22 +15,15 @@ args = [
     "--icon=NONE",
 ]
 
-# Add data folders
 data_folders = [
-    (assets_folder, "Assets"),
-    (games_folder, "games"),
-    (utils_folder, "Utils"),
+    (os.path.join(project_dir, "Assets"), "Assets"),
+    (os.path.join(project_dir, "games"),  "games"),
+    (os.path.join(project_dir, "Utils"),  "Utils"),
 ]
-
-# Add only custom beatmaps
-if os.path.exists(custom_beatmaps_folder):
-    data_folders.append((custom_beatmaps_folder, "beatmaps"))
-    print(f"Including custom beatmaps from: {custom_beatmaps_folder}")
 
 for src, dest in data_folders:
     args.append(f"--add-data={src}{os.pathsep}{dest}")
 
-# Hidden imports for pygame and game modules
 hidden_imports = [
     "pygame", "pygame.base", "pygame.constants", "pygame.rect", "pygame.rwobject",
     "pygame.surface", "pygame.math", "pygame.mixer", "pygame.font", "pygame.image",
@@ -47,15 +32,13 @@ hidden_imports = [
     "games.snake", "games.snake.snake_game",
     "games.shooter", "games.shooter.shooter_game", "games.shooter.tilemap",
     "games.shooter.wall_renderer", "games.shooter.helpers",
-    "games.tower_defense", "games.tower_defense.tower_defense_game",
-    "Utils", "Utils.portal", "Utils.textbox",
-    "math", "random", "sys", "os", "pathlib"
+    "Utils", "Utils.textbox", "Utils.save_manager",
+    "math", "random", "sys", "os", "pathlib",
 ]
 
 for mod in hidden_imports:
     args.append(f"--hidden-import={mod}")
 
-# Collect binaries and data for pygame
 args += [
     "--collect-binaries=pygame",
     "--collect-data=pygame",
@@ -64,13 +47,12 @@ args += [
     "--noconfirm",
     "--distpath=dist",
     "--workpath=build",
-    "--specpath=."
+    "--specpath=.",
 ]
 
-# Build
-print("="*60)
-print("Building The Power of 50 Executable with Custom Beatmaps Only...")
-print("="*60)
+print("=" * 60)
+print("Building The Power of 50...")
+print("=" * 60)
 
 try:
     PyInstaller.__main__.run(args)

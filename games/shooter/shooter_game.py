@@ -65,12 +65,17 @@ VIEWPORT_H       = 900
 WORLD_SIZE       = 18000
 TILE_SIZE        = 40
 CHUNK_SIZE       = 500
-WIN_KILLS        = 50
+WIN_KILLS        = 9999   # effectively endless survival
 
-MAX_ENEMIES      = 25
+MAX_ENEMIES      = 30
 SPAWN_DELAY_BASE = 150
-SPAWN_DELAY_MIN  = 30
-SPAWN_KILLS_STEP = 5
+SPAWN_DELAY_MIN  = 20
+SPAWN_KILLS_STEP = 3
+
+# Mega-boss spawns every this many kills
+MEGA_BOSS_INTERVAL = 50
+# Mini-boss spawns every this many kills
+MINI_BOSS_INTERVAL = 10
 
 # Palette
 C_BG           = (18,  18,  32)
@@ -100,14 +105,16 @@ ENEMY_STYLES = {
     'fast':    {'body': (255, 200, 40),  'rim': (255, 240, 140), 'dark': (180, 120, 0)},
     'tank':    {'body': (80,  100, 180), 'rim': (160, 180, 255), 'dark': (40, 50, 110)},
     'shooter': {'body': (60,  200, 100), 'rim': (140, 255, 160), 'dark': (20, 100, 40)},
-    'sniper':  {'body': (180,  60, 220), 'rim': (240, 160, 255), 'dark': (90, 20, 130)},
 }
 BOSS_STYLES = {
-    1: {'body': (180,  30, 200), 'rim': (255, 100, 255), 'dark': (80, 0, 100),  'name': 'VOIDCALLER'},
-    2: {'body': (200,  80,  20), 'rim': (255, 200,  60), 'dark': (120, 30, 0),  'name': 'INFERNAX'},
-    3: {'body': ( 20, 160, 180), 'rim': ( 80, 240, 255), 'dark': (10, 80, 100), 'name': 'GLACIUS'},
-    4: {'body': (160, 160,  20), 'rim': (255, 255, 100), 'dark': (80, 80, 0),   'name': 'SOLARCH'},
-    5: {'body': (220,  20,  60), 'rim': (255, 120, 140), 'dark': (120, 0, 30),  'name': 'NECRAXIS'},
+    1: {'body': (180,  30, 200), 'rim': (255, 100, 255), 'dark': (80, 0, 100),   'name': 'VOIDCALLER'},
+    2: {'body': (200,  80,  20), 'rim': (255, 200,  60), 'dark': (120, 30, 0),   'name': 'INFERNAX'},
+    3: {'body': ( 20, 160, 180), 'rim': ( 80, 240, 255), 'dark': (10, 80, 100),  'name': 'GLACIUS'},
+    4: {'body': (160, 160,  20), 'rim': (255, 255, 100), 'dark': (80, 80, 0),    'name': 'SOLARCH'},
+    5: {'body': (220,  20,  60), 'rim': (255, 120, 140), 'dark': (120, 0, 30),   'name': 'NECRAXIS'},
+    6: {'body': ( 20,  80, 220), 'rim': (100, 180, 255), 'dark': (10, 30, 120),  'name': 'ABYSSTIDE'},
+    7: {'body': (180, 140,  20), 'rim': (255, 220,  80), 'dark': (90, 70, 0),    'name': 'WRATHBORN'},
+    8: {'body': ( 20, 200,  80), 'rim': ( 80, 255, 160), 'dark': (10, 100, 40),  'name': 'VIRULEX'},
 }
 BOSS_FINAL_STYLE = {'body': (220, 0, 80), 'rim': (255, 80, 180), 'dark': (100, 0, 40), 'name': 'OMEGA PRIME'}
 
@@ -120,6 +127,7 @@ ITEM_CONFIG = {
     'bounce':    {'color': (  0, 255, 220), 'name': '+Bounce',       'desc': 'RICOH',    'icon': 'bounce'},
     'pierce':    {'color': (220,  60, 255), 'name': '+Pierce',       'desc': 'PIERCE',   'icon': 'pierce'},
     'speed':     {'color': (100, 255, 100), 'name': '+Speed',        'desc': 'SWIFT',    'icon': 'speed'},
+    'steady':    {'color': (180, 255, 180), 'name': '+Steady Aim',    'desc': 'STEADY',   'icon': 'steady'},
     # Consumable
     'health':    {'color': ( 80, 220,  80), 'name': '+1 Health',      'desc': 'HEAL',     'icon': 'health'},
     # Boss-only drops
@@ -346,9 +354,10 @@ class Player:
         self.orbital_count = 0
         self.dual_gun_count= 0
         self.bullet_explode= 0   # explosion radius stacks
-        self.magnet        = False
-        self.magnet_angle  = 0.0  # current orbit angle
-        self.magnet_target_angle = 0.0  # angle pointing at nearest crate
+        self.magnet_count  = 0   # stacks: each adds pull range
+        self.magnet_angle  = 0.0
+        self.magnet_target_angle = 0.0
+        self.steady_aim    = 0   # reduces inaccuracy and speeds up aim lerp
         self.shoot_dir     = [0.0, -1.0]
         self.has_target    = False
         self.invincible    = 0   # invincibility frames after hit
@@ -386,7 +395,12 @@ class Player:
         if dist == 0: return
         target_angle  = angle_of(dx, dy)
         current_angle = angle_of(self.shoot_dir[0], self.shoot_dir[1])
-        new_angle     = angle_lerp(current_angle, target_angle, 0.18)
+        # Lerp speed increases with steady_aim; base aim wanders a bit
+        lerp_t = min(0.95, 0.12 + self.steady_aim * 0.10)
+        # Add angular noise that decreases with steady_aim
+        wobble = 0.04 * max(0.0, 1.0 - self.steady_aim * 0.25)
+        noise = random.uniform(-wobble, wobble)
+        new_angle = angle_lerp(current_angle, target_angle + noise, lerp_t)
         self.shoot_dir = [math.cos(new_angle), math.sin(new_angle)]
         self.has_target = True
 
@@ -481,22 +495,24 @@ class Player:
         pygame.draw.circle(screen, (255, int(190 + 50*tip_pulse), 40), tip, 3)
         pygame.draw.circle(screen, (255, 240, 160), tip, 1)
 
-        # ── Dual side guns ──
+        # ── Dual side guns (one pair per stack) ──
         if self.has_dual_gun:
-            for sign in (-1, 1):
-                sy2 = sign * 13
-                side = rpts((8,sy2-2),(8,sy2+2),(22,sy2+1),(22,sy2-1))
-                pygame.draw.polygon(screen, (60, 54, 46) if not flash else (255,255,255), side)
-                pygame.draw.polygon(screen, (95, 86, 72), side, 1)
-                stip = rot(22, sy2)
-                pygame.draw.circle(screen, (255, 170, 30), stip, 3)
+            for gn in range(self.dual_gun_count):
+                off = 10 + gn * 10
+                for sign in (-1, 1):
+                    sy2 = sign * off
+                    side = rpts((8,sy2-2),(8,sy2+2),(22,sy2+1),(22,sy2-1))
+                    pygame.draw.polygon(screen, (60, 54, 46) if not flash else (255,255,255), side)
+                    pygame.draw.polygon(screen, (95, 86, 72), side, 1)
+                    stip = rot(22, sy2)
+                    pygame.draw.circle(screen, (255, 170, 30), stip, 3)
 
 
     def draw_orbital(self, screen: pygame.Surface, cam_x, cam_y, frame: int = 0):
         if not self.has_orbital:
             return
         sx, sy = int(self.x - cam_x), int(self.y - cam_y)
-        count = min(3 + self.orbital_count - 1, 6)
+        count = min(self.orbital_count, 8)
         for i in range(count):
             a = self.orbital_angle + i * 2 * math.pi / count
             ox = int(sx + math.cos(a) * 55)
@@ -513,10 +529,10 @@ class Player:
                                  (int(ox + math.cos(ba)*13), int(oy + math.sin(ba)*13)), 2)
 
     def update_magnet(self, items: list):
-        if not self.magnet:
+        if not self.magnet_count:
             return
-        PULL_RANGE = 380.0
-        PULL_SPEED = 4.5
+        PULL_RANGE = 200.0 + self.magnet_count * 120.0   # 320, 440, 560... per stack
+        PULL_SPEED = 3.5 + self.magnet_count * 0.5
         nearest_dist = float('inf')
         nearest_angle = self.magnet_angle
         for item in items:
@@ -536,7 +552,7 @@ class Player:
             self.magnet_angle += 0.04
 
     def draw_magnet(self, screen: pygame.Surface, cam_x, cam_y):
-        if not self.magnet:
+        if not self.magnet_count:
             return
         sx, sy = int(self.x - cam_x), int(self.y - cam_y)
         ORBIT_R = 38
@@ -584,20 +600,21 @@ class Player:
 class Bullet:
     __slots__ = ('x', 'y', 'dir', 'speed', 'size', 'damage',
                  'bounces_left', 'max_bounces', 'pierce_left', 'max_pierce',
-                 'lifetime', 'last_bounce_frame', 'hit_enemies', 'trail')
+                 'lifetime', 'last_bounce_frame', 'hit_enemies')
 
     SPEED    = 10
     SIZE     = 5
     LIFETIME = 300
-    INACCURACY = 0.12
+    INACCURACY = 0.20
 
-    def __init__(self, x, y, direction, damage=10, bounces=0, pierce=0):
+    def __init__(self, x, y, direction, damage=10, bounces=0, pierce=0, inaccuracy=None, speed=None):
         self.x, self.y    = float(x), float(y)
-        rdx = direction[0] + random.uniform(-self.INACCURACY, self.INACCURACY)
-        rdy = direction[1] + random.uniform(-self.INACCURACY, self.INACCURACY)
+        acc = self.INACCURACY if inaccuracy is None else inaccuracy
+        rdx = direction[0] + random.uniform(-acc, acc)
+        rdy = direction[1] + random.uniform(-acc, acc)
         ndx, ndy          = normalize(rdx, rdy)
         self.dir          = [ndx, ndy]
-        self.speed        = self.SPEED
+        self.speed        = self.SPEED if speed is None else speed
         self.size         = self.SIZE
         self.damage       = damage
         self.bounces_left = bounces
@@ -607,12 +624,8 @@ class Bullet:
         self.lifetime     = self.LIFETIME
         self.last_bounce_frame = -1
         self.hit_enemies: set[int] = set()
-        self.trail: list[tuple[float, float]] = []
 
     def update(self):
-        self.trail.append((self.x, self.y))
-        if len(self.trail) > 4:
-            self.trail.pop(0)
         self.x += self.dir[0] * self.speed
         self.y += self.dir[1] * self.speed
         self.lifetime -= 1
@@ -643,15 +656,7 @@ class Bullet:
             color = C_BULLET_BOUNCE
         else:
             color = C_BULLET
-
-        # Trail — faded circles, no SRCALPHA surfaces
-        for i, (tx, ty) in enumerate(self.trail):
-            frac = (i + 1) / len(self.trail)
-            tc = (int(color[0]*frac*0.5), int(color[1]*frac*0.5), int(color[2]*frac*0.5))
-            pygame.draw.circle(screen, tc, (int(tx-cam_x), int(ty-cam_y)), max(1, self.size-1))
-
         pygame.draw.circle(screen, color, (sx, sy), self.size)
-        pygame.draw.circle(screen, C_WHITE, (sx, sy), self.size, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -660,7 +665,7 @@ class Bullet:
 
 class EnemyBullet:
     __slots__ = ('x', 'y', 'dir', 'speed', 'size', 'is_cannon', 'bullet_type',
-                 'lifetime', 'spin', '_homing_target')
+                 'lifetime', '_homing_target')
 
     def __init__(self, x, y, direction, *, is_cannon=False, bullet_type='normal', lifetime=220):
         self.x, self.y   = float(x), float(y)
@@ -668,7 +673,6 @@ class EnemyBullet:
         self.is_cannon   = is_cannon
         self.bullet_type = bullet_type
         self.lifetime    = lifetime
-        self.spin        = 0.0
         if   bullet_type == 'laser':    self.speed, self.size = 14, 5
         elif bullet_type == 'mortar':   self.speed, self.size = 3, 14
         elif bullet_type == 'homing':   self.speed, self.size = 5, 7
@@ -678,7 +682,6 @@ class EnemyBullet:
         self._homing_target = None
 
     def update(self, px: float = 0, py: float = 0):
-        self.spin += 0.2
         self.lifetime -= 1
         if self.bullet_type == 'homing':
             # Gentle home toward player
@@ -695,39 +698,60 @@ class EnemyBullet:
     def draw(self, screen: pygame.Surface, cam_x, cam_y):
         sx, sy = int(self.x - cam_x), int(self.y - cam_y)
         t = self.bullet_type
-        if   t == 'laser':
-            pygame.draw.circle(screen, (255, 80, 80),   (sx, sy), self.size)
-            pygame.draw.circle(screen, (255, 200, 200), (sx, sy), self.size, 1)
-        elif t == 'mortar':
-            pygame.draw.circle(screen, (200, 140, 40), (sx, sy), self.size)
-            pygame.draw.circle(screen, (255, 200, 80), (sx, sy), self.size, 2)
-            # Spin cross
-            for j in range(4):
-                ba = self.spin + j * math.pi/2
-                pygame.draw.line(screen, (255,255,150),
-                                 (int(sx+math.cos(ba)*4), int(sy+math.sin(ba)*4)),
-                                 (int(sx+math.cos(ba)*self.size), int(sy+math.sin(ba)*self.size)), 2)
-        elif t == 'homing':
-            pygame.draw.circle(screen, (220, 60, 255), (sx, sy), self.size)
-            pygame.draw.circle(screen, (255, 180, 255),(sx, sy), self.size, 1)
-            pygame.draw.circle(screen, (255, 100, 255),(sx, sy), 3)
-        elif t == 'snipe':
-            for i in range(3):
-                a = self.spin + i*2*math.pi/3
-                pygame.draw.line(screen, (255, 80, 80),
-                                 (sx, sy),
-                                 (int(sx+math.cos(a)*self.size*2),
-                                  int(sy+math.sin(a)*self.size*2)), 1)
-            pygame.draw.circle(screen, (255,200,200), (sx, sy), 3)
-        elif self.is_cannon:
-            pygame.draw.circle(screen, C_ECANNON, (sx, sy), self.size)
-            pygame.draw.circle(screen, (255, 180, 100), (sx, sy), self.size, 2)
-        else:
-            pygame.draw.circle(screen, C_EBULLET, (sx, sy), self.size)
+        if   t == 'laser':  pygame.draw.circle(screen, (255, 80,  80),  (sx, sy), self.size)
+        elif t == 'mortar': pygame.draw.circle(screen, (200, 140,  40), (sx, sy), self.size)
+        elif t == 'homing': pygame.draw.circle(screen, (220,  60, 255), (sx, sy), self.size)
+        elif t == 'snipe':  pygame.draw.circle(screen, (255,  80,  80), (sx, sy), self.size)
+        elif self.is_cannon:pygame.draw.circle(screen, C_ECANNON,       (sx, sy), self.size)
+        else:               pygame.draw.circle(screen, C_EBULLET,       (sx, sy), self.size)
 
 
 def lerp(a, b, t):
     return a + (b-a)*t
+
+
+# ---------------------------------------------------------------------------
+# Particle
+# ---------------------------------------------------------------------------
+
+class Particle:
+    __slots__ = ('x', 'y', 'vx', 'vy', 'life', 'max_life', 'color', 'size')
+
+    def __init__(self, x, y, vx, vy, color, size=3, life=30):
+        self.x, self.y   = float(x), float(y)
+        self.vx, self.vy = float(vx), float(vy)
+        self.color       = color
+        self.size        = size
+        self.life        = life
+        self.max_life    = life
+
+    def update(self):
+        self.x  += self.vx
+        self.y  += self.vy
+        self.vx *= 0.88
+        self.vy *= 0.88
+        self.life -= 1
+
+    def draw(self, screen: pygame.Surface, cam_x, cam_y):
+        frac = self.life / self.max_life
+        bright = frac ** 0.45   # stays vivid longer, then fades sharply at end
+        r = int(self.color[0] * bright)
+        g = int(self.color[1] * bright)
+        b = int(self.color[2] * bright)
+        sx = int(self.x - cam_x)
+        sy = int(self.y - cam_y)
+        r2 = max(1, int(self.size * frac))
+        pygame.draw.circle(screen, (r, g, b), (sx, sy), r2)
+
+
+def _spawn_particles(x, y, color, count=14, speed=4.0, size=4, life=35) -> list[Particle]:
+    """Burst of particles at (x, y) in random directions."""
+    out = []
+    for _ in range(count):
+        a  = random.uniform(0, math.pi * 2)
+        sp = random.uniform(speed * 0.4, speed)
+        out.append(Particle(x, y, math.cos(a)*sp, math.sin(a)*sp, color, size, life))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -868,6 +892,16 @@ def _draw_icon_health(surf, cx, cy, c, size):
     pygame.draw.rect(surf, c, (cx - t//2, cy - s//2, t, s), border_radius=1)
     pygame.draw.rect(surf, c, (cx - s//2, cy - t//2, s, t), border_radius=1)
 
+def _draw_icon_steady(surf, cx, cy, c, size):
+    """Crosshair / reticle icon."""
+    s = int(size * 0.8)
+    pygame.draw.circle(surf, c, (cx, cy), s, 2)
+    for a in (0, math.pi/2, math.pi, 3*math.pi/2):
+        pygame.draw.line(surf, c,
+                         (int(cx + math.cos(a) * (s - 4)), int(cy + math.sin(a) * (s - 4))),
+                         (int(cx + math.cos(a) * (s + 4)), int(cy + math.sin(a) * (s + 4))), 2)
+    pygame.draw.circle(surf, c, (cx, cy), 3)
+
 _ICON_DRAW = {
     'firerate':  _draw_icon_firerate,
     'multishot': _draw_icon_multishot,
@@ -880,6 +914,7 @@ _ICON_DRAW = {
     'explode':   _draw_icon_explode,
     'magnet':    _draw_icon_magnet,
     'health':    _draw_icon_health,
+    'steady':    _draw_icon_steady,
 }
 
 _LABEL_FONT: pygame.font.Font | None = None
@@ -993,11 +1028,12 @@ class Item:
         elif self.type == 'bounce':    player.bullet_bounce    = min(3, player.bullet_bounce+1)
         elif self.type == 'pierce':    player.bullet_pierce    = min(5, player.bullet_pierce+1)
         elif self.type == 'speed':     player.speed            = min(12, player.speed+0.5)
-        elif self.type == 'orbital':   player.has_orbital=True; player.orbital_count+=1
-        elif self.type == 'dual_gun':  player.has_dual_gun=True; player.dual_gun_count+=1
-        elif self.type == 'explode':   player.bullet_explode   = min(4, player.bullet_explode+1)
-        elif self.type == 'magnet':    player.magnet           = True
-        elif self.type == 'health':    player.health           = min(player.MAX_HEALTH, player.health + 1)
+        elif self.type == 'orbital':   player.has_orbital = True; player.orbital_count += 1          # +1 saw
+        elif self.type == 'dual_gun':  player.has_dual_gun = True; player.dual_gun_count += 1
+        elif self.type == 'explode':   player.bullet_explode += 1                                     # no cap
+        elif self.type == 'magnet':    player.magnet_count += 1                                       # +range per stack
+        elif self.type == 'steady':    player.steady_aim += 1                                         # no cap
+        elif self.type == 'health':    player.health = min(player.MAX_HEALTH, player.health + 1)
 
 
 # ---------------------------------------------------------------------------
@@ -1013,7 +1049,7 @@ class Enemy:
         self.x, self.y   = float(x), float(y)
         self.is_boss      = is_boss
         self.is_final     = is_final
-        self.boss_id      = max(1, min(boss_id, 5))
+        self.boss_id      = max(1, min(boss_id, 8))
         self.enemy_type   = enemy_type
 
         if is_final:
@@ -1031,23 +1067,18 @@ class Enemy:
         elif enemy_type == 'shooter':
             self.size  = 14
             self.speed = random.uniform(2.0, 2.5)
-        elif enemy_type == 'sniper':
-            self.size  = 13
-            self.speed = random.uniform(1.2, 1.8)
         else:
             self.size  = 15
             self.speed = random.uniform(1.5, 3.0)
 
         self.health     = health
         self.max_health = health
-
         # Shoot rates per type
-        if enemy_type == 'shooter':        self.shoot_rate = 55
-        elif enemy_type == 'sniper':       self.shoot_rate = 150
-        elif enemy_type == 'tank':         self.shoot_rate = 420
-        elif is_final:                     self.shoot_rate = 60
-        elif is_boss:                      self.shoot_rate = 90
-        else:                              self.shoot_rate = 9999999
+        if enemy_type == 'shooter':  self.shoot_rate = 55
+        elif enemy_type == 'tank':   self.shoot_rate = 420
+        elif is_final:               self.shoot_rate = 60
+        elif is_boss:                self.shoot_rate = 90
+        else:                        self.shoot_rate = 9999999
 
         self.shoot_cooldown    = random.randint(0, self.shoot_rate)
         self.attack_pattern    = 0
@@ -1065,10 +1096,8 @@ class Enemy:
         self.dash_dir      = [0.0, 0.0]
         self.dash_trail: list[tuple[float, float]] = []
 
-        # Sniper charge
-        self.snipe_charge = 0
-        self.snipe_locked = False
-        self.snipe_dir    = [0.0, 0.0]
+        # Fast: track angle toward player (updated in update())
+        self.face_angle = random.uniform(0, math.pi * 2)
 
     def update(self, px, py, chunk_manager: ChunkManager, has_los: bool):
         self.anim_timer += 1
@@ -1081,7 +1110,10 @@ class Enemy:
         dist_sq  = dx*dx + dy*dy
         dist     = math.sqrt(dist_sq) if dist_sq > 0 else 0.001
 
-        # Fast: dash logic
+        # Always track the angle toward the player (used by fast draw)
+        self.face_angle = math.atan2(dy, dx)
+
+        # Fast: point at player, telegraph then dash
         if self.enemy_type == 'fast':
             if self.is_dashing:
                 self.dash_trail.append((self.x, self.y))
@@ -1101,16 +1133,8 @@ class Enemy:
                     self.dash_timer = 15
                     self.dash_cooldown = 160
                     return
-
-        # Sniper: stay back, charge shot
-        if self.enemy_type == 'sniper':
-            preferred = 400
-            if dist < preferred - 50:
-                # Back away
-                self._move(-dx/dist * self.speed, -dy/dist * self.speed, chunk_manager)
-            elif dist > preferred + 150:
-                self._move(dx/dist * self.speed * 0.6, dy/dist * self.speed * 0.6, chunk_manager)
-            # else stand still and snipe
+                # Creep slowly toward player while not dashing
+                self._move(dx/dist * self.speed * 0.3, dy/dist * self.speed * 0.3, chunk_manager)
         else:
             if dist_sq > 0:
                 self._move(dx/dist * self.speed, dy/dist * self.speed, chunk_manager)
@@ -1132,7 +1156,7 @@ class Enemy:
         if not cm.tilemap.check_collision(self.x, ny, self.size): self.y = ny
 
     def can_shoot(self) -> bool:
-        return (self.is_boss or self.enemy_type in ('shooter','tank','sniper')) \
+        return (self.is_boss or self.enemy_type in ('shooter', 'tank')) \
                and self.shoot_cooldown == 0
 
     def shoot(self, px, py) -> list[EnemyBullet]:
@@ -1161,9 +1185,6 @@ class Enemy:
                 for sign in (-1, 1):
                     a = base_angle + sign*0.5
                     bullets.append(B((math.cos(a), math.sin(a)), btype='mortar'))
-            elif self.enemy_type == 'sniper':
-                # One instant fast beam
-                bullets.append(B(base, btype='snipe'))
             return bullets
 
         # ---- Per-boss attack sets ----
@@ -1220,6 +1241,24 @@ class Enemy:
                 lambda: [B(d,'mortar') for d in ring_directions(6)] + [B(d,'homing') for d in ring_directions(4, math.pi/6)],
                 lambda: [B(d,'homing') for d in ring_directions(10, pt*0.05)],
             ],
+            6: [  # ABYSSTIDE — deep-water slow death waves
+                lambda: [B(d) for d in ring_directions(16, pt*0.04)],
+                lambda: [B(d,'mortar') for d in ring_directions(8, pt*0.06)] + [B(d,'homing') for d in ring_directions(4)],
+                lambda: [B(d,'laser') for d in spread_directions(*base, 8, 1.8)],
+                lambda: [B(d) for d in ring_directions(12)] + [B(d,'mortar') for d in ring_directions(6, math.pi/6)],
+            ],
+            7: [  # WRATHBORN — rage-fueled spread
+                lambda: [B(d) for d in spread_directions(*base, 16, 2.0)],
+                lambda: [B(d,'laser') for d in ring_directions(6, pt*0.08)] + [B(d) for d in ring_directions(6, math.pi/6)],
+                lambda: [B(d,'snipe') for d in spread_directions(*base, 4, 0.5)] + [B(d,'homing') for d in ring_directions(8)],
+                lambda: [B(d) for d in ring_directions(20, pt*0.06)],
+            ],
+            8: [  # VIRULEX — infectious spread clusters
+                lambda: [B(d,'homing') for d in ring_directions(12, pt*0.05)],
+                lambda: [B(d,'mortar') for d in spread_directions(*base, 6, 1.2)] + [B(d,'snipe') for d in ring_directions(4)],
+                lambda: [B(d) for d in ring_directions(18, pt*0.07)],
+                lambda: [B(d,'laser') for d in ring_directions(8, pt*0.1)] + [B(d,'homing') for d in spread_directions(*base, 6, 1.0)],
+            ],
         }
         fns = MINI.get(self.boss_id, MINI[1])
         idx = self.attack_pattern % len(fns)
@@ -1246,8 +1285,6 @@ class Enemy:
             self._draw_tank(screen, sx, sy)
         elif t == 'shooter':
             self._draw_shooter(screen, sx, sy)
-        elif t == 'sniper':
-            self._draw_sniper(screen, sx, sy)
 
         self._draw_healthbar(screen, sx, sy)
 
@@ -1277,8 +1314,11 @@ class Enemy:
     def _draw_fast(self, screen, sx, sy):
         style = ENEMY_STYLES['fast']
         s = self.size
-        a = self.anim_angle
-        # Motion-blur ghost trails (always, not just while dashing)
+        # Always face the player; during dash use locked dash direction
+        a = math.atan2(self.dash_dir[1], self.dash_dir[0]) if self.is_dashing else self.face_angle
+        # Pre-dash telegraph: tighten/brighten slightly when dash is ready
+        ready = (not self.is_dashing and self.dash_cooldown <= 0)
+        # Motion-blur ghost trails (only while dashing)
         trail_pts = self.dash_trail if self.is_dashing else []
         for i, (tx, ty) in enumerate(trail_pts):
             frac = (i + 1) / max(len(trail_pts), 1)
@@ -1301,12 +1341,18 @@ class Enemy:
         pygame.draw.polygon(screen, style['dark'], pts_outer)
         pygame.draw.polygon(screen, style['body'], pts_inner)
         pygame.draw.polygon(screen, style['rim'],  pts_outer, 2)
-        # Speed lines behind
-        for i in range(4):
-            la = a + math.pi + (i - 1.5) * 0.22
-            pygame.draw.line(screen, style['rim'],
-                             (int(sx + math.cos(la)*4),        int(sy + math.sin(la)*4)),
-                             (int(sx + math.cos(la)*s*1.4),    int(sy + math.sin(la)*s*1.4)), 1)
+        # Speed lines behind (only while dashing)
+        if self.is_dashing:
+            for i in range(4):
+                la = a + math.pi + (i - 1.5) * 0.22
+                pygame.draw.line(screen, style['rim'],
+                                 (int(sx + math.cos(la)*4),     int(sy + math.sin(la)*4)),
+                                 (int(sx + math.cos(la)*s*1.4), int(sy + math.sin(la)*s*1.4)), 1)
+        # Telegraph ring when dash is charged
+        if ready:
+            pulse = 0.6 + 0.4 * math.sin(self.anim_timer * 0.3)
+            rc = (int(255*pulse), int(240*pulse), int(80*pulse))
+            pygame.draw.circle(screen, rc, (sx, sy), s + 5, 2)
 
     def _draw_tank(self, screen, sx, sy):
         style = ENEMY_STYLES['tank']
@@ -1370,22 +1416,6 @@ class Enemy:
             ty2 = sy + math.sin(a)*(s+8)
             pygame.draw.line(screen, style['rim'], (int(tx),int(ty)), (int(tx2),int(ty2)), 3)
 
-    def _draw_sniper(self, screen, sx, sy):
-        style = ENEMY_STYLES['sniper']
-        s = self.size
-        # Diamond shape
-        pts = [(sx, sy-s), (sx+s, sy), (sx, sy+s), (sx-s, sy)]
-        pygame.draw.polygon(screen, style['body'], pts)
-        pygame.draw.polygon(screen, style['rim'],  pts, 2)
-        # Long barrel (rotating toward aim)
-        a = self.anim_angle
-        blen = s * 1.8
-        pygame.draw.line(screen, style['rim'], (sx, sy),
-                         (int(sx+math.cos(a)*blen), int(sy+math.sin(a)*blen)), 4)
-        pygame.draw.circle(screen, style['dark'], (sx, sy), 5)
-        # Scope dot
-        pygame.draw.circle(screen, (255,100,255), (sx, sy), 3)
-
     def _draw_mini_boss(self, screen, sx, sy):
         bid = self.boss_id
         style = BOSS_STYLES.get(bid, BOSS_STYLES[1])
@@ -1403,7 +1433,7 @@ class Enemy:
             screen.blit(gs2, (sx-gr-1, sy-gr-1))
 
         # Outer rotating petals
-        petal_n = 6 + bid
+        petal_n = 5 + bid  # 6-13 petals for bosses 1-8
         for i in range(petal_n):
             a = self.anim_angle*1.2 + i*2*math.pi/petal_n
             px2 = sx + math.cos(a)*s
@@ -1522,6 +1552,7 @@ class ShooterGame:
         self.enemies:       list[Enemy]       = []
         self.items:         list[Item]        = []
         self.popups:        list[Popup]       = []
+        self.particles:     list[Particle]   = []
         self.kills          = 0
         self.shoot_cd       = 0
         self.spawn_timer    = 0
@@ -1534,6 +1565,9 @@ class ShooterGame:
 
         # Precompute seamless floor pattern
         self._floor_surf: pygame.Surface | None = None
+
+        # Precompute vignette overlay (dark edges, transparent centre)
+        self._vignette = self._build_vignette()
 
         # Restore a saved run if provided
         if save_data:
@@ -1563,7 +1597,8 @@ class ShooterGame:
                 'has_dual_gun':  p.has_dual_gun,
                 'dual_gun_count':p.dual_gun_count,
                 'bullet_explode':p.bullet_explode,
-                'magnet':        p.magnet,
+                'magnet_count':  p.magnet_count,
+                'steady_aim':    p.steady_aim,
             },
         }
 
@@ -1581,8 +1616,9 @@ class ShooterGame:
         p.orbital_count  = int(pd.get('orbital_count', 0))
         p.has_dual_gun   = bool(pd.get('has_dual_gun', False))
         p.dual_gun_count = int(pd.get('dual_gun_count',0))
-        p.bullet_explode = int(pd.get('bullet_explode',0))
-        p.magnet         = bool(pd.get('magnet',       False))
+        p.bullet_explode = int(pd.get('bullet_explode', 0))
+        p.magnet_count   = int(pd.get('magnet_count',  0))
+        p.steady_aim     = int(pd.get('steady_aim',    0))
         self.kills       = int(data.get('kills', 0))
         p.x = float(data.get('player_x', WORLD_SIZE // 2))
         p.y = float(data.get('player_y', WORLD_SIZE // 2))
@@ -1686,8 +1722,23 @@ class ShooterGame:
         self._floor_rows = rows
         self._floor_surf = surf   # will be filled per-frame cheaply via _draw_floor
 
+    def _build_vignette(self) -> pygame.Surface:
+        """Pre-render dark-edge vignette once; blit each frame at zero GC cost."""
+        surf = pygame.Surface((VIEWPORT_W, VIEWPORT_H), pygame.SRCALPHA)
+        cx, cy = VIEWPORT_W // 2, VIEWPORT_H // 2
+        max_r = int(math.sqrt(cx * cx + cy * cy)) + 30
+        steps = 20
+        for i in range(steps):
+            frac = i / (steps - 1)          # 0 = innermost ring, 1 = outermost
+            r = int(max_r * (0.38 + frac * 0.62))
+            alpha = int(115 * frac ** 2.4)  # stays clear in centre, dark at edges
+            ring_w = max(5, max_r // steps + 3)
+            pygame.draw.circle(surf, (0, 0, 0, alpha), (cx, cy), r, ring_w)
+        return surf
+
     def _draw_floor(self):
-        """Scroll the stone floor in world-space so tiles stay fixed as the camera moves."""
+        """Scroll the stone floor. Only redraws tile content when the camera crosses a tile boundary;
+        smooth sub-tile scrolling is free (just a blit offset)."""
         ts = getattr(self, '_floor_ts', None)
         if ts is None:
             self._build_floor_surf()
@@ -1698,35 +1749,37 @@ class ShooterGame:
         rows = self._floor_rows
 
         cam_x, cam_y = int(self.cam_x), int(self.cam_y)
-        # World-grid cell of the top-left corner of the viewport
         start_gx = cam_x // ts
         start_gy = cam_y // ts
-        # Sub-tile pixel offset for smooth scrolling
         ox = cam_x % ts
         oy = cam_y % ts
 
-        for row in range(rows):
-            for col in range(cols):
-                gx = start_gx + col
-                gy = start_gy + row
-                n0 = _hash2(gx * 17 + 3,  gy * 13 + 7)
-                n1 = _hash2(gx * 7  + 31, gy * 29 + 5)
-                base_r = 32 + int(n0 * 10)
-                base_g = 29 + int(n0 * 8)
-                base_b = 26 + int(n0 * 7)
-                rx = col * ts
-                ry = row * ts
-                rect = pygame.Rect(rx, ry, ts, ts)
-                pygame.draw.rect(surf, (base_r, base_g, base_b), rect)
-                crack_c = (max(0, base_r-8), max(0, base_g-7), max(0, base_b-6))
-                if n1 < 0.30:
-                    mid = int(ts * 0.4 + n1 * ts * 0.5)
-                    pygame.draw.line(surf, crack_c, (rx+mid, ry+6), (rx+mid, ry+ts-6), 1)
-                elif n1 < 0.55:
-                    mid = int(ts * 0.4 + (n1-0.3) * ts * 0.6)
-                    pygame.draw.line(surf, crack_c, (rx+6, ry+mid), (rx+ts-6, ry+mid), 1)
-                grout = (max(0, base_r-14), max(0, base_g-12), max(0, base_b-10))
-                pygame.draw.rect(surf, grout, rect, 2)
+        # Only rebuild tile content when the grid origin changes (roughly every 24 frames at walking speed)
+        if start_gx != getattr(self, '_floor_gx', -9999) or start_gy != getattr(self, '_floor_gy', -9999):
+            self._floor_gx = start_gx
+            self._floor_gy = start_gy
+            for row in range(rows):
+                for col in range(cols):
+                    gx = start_gx + col
+                    gy = start_gy + row
+                    n0 = _hash2(gx * 17 + 3,  gy * 13 + 7)
+                    n1 = _hash2(gx * 7  + 31, gy * 29 + 5)
+                    base_r = 32 + int(n0 * 10)
+                    base_g = 29 + int(n0 * 8)
+                    base_b = 26 + int(n0 * 7)
+                    rx = col * ts
+                    ry = row * ts
+                    rect = pygame.Rect(rx, ry, ts, ts)
+                    pygame.draw.rect(surf, (base_r, base_g, base_b), rect)
+                    crack_c = (max(0, base_r-8), max(0, base_g-7), max(0, base_b-6))
+                    if n1 < 0.30:
+                        mid = int(ts * 0.4 + n1 * ts * 0.5)
+                        pygame.draw.line(surf, crack_c, (rx+mid, ry+6), (rx+mid, ry+ts-6), 1)
+                    elif n1 < 0.55:
+                        mid = int(ts * 0.4 + (n1-0.3) * ts * 0.6)
+                        pygame.draw.line(surf, crack_c, (rx+6, ry+mid), (rx+ts-6, ry+mid), 1)
+                    grout = (max(0, base_r-14), max(0, base_g-12), max(0, base_b-10))
+                    pygame.draw.rect(surf, grout, rect, 2)
 
         self.screen.blit(surf, (-ox, -oy))
 
@@ -1737,23 +1790,29 @@ class ShooterGame:
     def _spawn_enemy(self):
         if self.boss_active:
             return
-        base_hp = 50 + (self.kills // 5) * 50
-        is_mini  = self.kills > 0 and self.kills % 10 == 0 and self.kills < WIN_KILLS
-        is_final = self.kills == WIN_KILLS - 1
+        # HP scales aggressively with kills
+        tier = self.kills // 10
+        base_hp = 60 + tier * 80
+        is_mega = self.kills > 0 and self.kills % MEGA_BOSS_INTERVAL == 0
+        is_mini = self.kills > 0 and self.kills % MINI_BOSS_INTERVAL == 0 and not is_mega
 
-        if is_mini or is_final:
+        if is_mega or is_mini:
             self.enemies.clear()
             self.bullets.clear()
             self.enemy_bullets.clear()
             bx, by = self.chunk_manager.get_safe_pos_near_room()
 
-            if is_final:
-                boss = Enemy(bx, by, 2800, is_boss=True, is_final=True)
+            if is_mega:
+                # Mega boss — uses final-boss draw style; HP scales with kills
+                mega_hp = 3000 + self.kills * 60
+                boss = Enemy(bx, by, mega_hp, is_boss=True, is_final=True)
             else:
-                bid  = max(1, self.kills // 10)
-                _boss_hp = {1: 500, 2: 750, 3: 1250, 4: 1750}
-                boss = Enemy(bx, by, _boss_hp.get(bid, base_hp*5), is_boss=True, boss_id=bid)
-            # Validate boss is safe
+                # Mini boss — cycle through IDs 1-8
+                bid = ((self.kills // MINI_BOSS_INTERVAL - 1) % 8) + 1
+                # HP ramps up with kill count
+                mini_hp = 500 + tier * 180
+                boss = Enemy(bx, by, mini_hp, is_boss=True, boss_id=bid)
+
             if not self.chunk_manager.is_pos_safe(boss.x, boss.y, boss.size):
                 boss.x, boss.y = self.chunk_manager.get_safe_pos_near_room()
             self.enemies.append(boss)
@@ -1761,21 +1820,25 @@ class ShooterGame:
             self.boss_active  = True
             return
 
-        # Regular enemy — guaranteed safe spawn
+        # Regular enemy — 4 types, weights shift with kills
         rand = random.random()
-        if   rand < 0.25: etype, hp = 'normal',  base_hp
-        elif rand < 0.40: etype, hp = 'fast',    int(base_hp*0.5)
-        elif rand < 0.60: etype, hp = 'tank',    int(base_hp*2)
-        elif rand < 0.80: etype, hp = 'shooter', int(base_hp*0.7)
-        else:             etype, hp = 'sniper',  int(base_hp*0.8)
-        # Size map for radius check — use actual enemy body size + generous margin
-        _size_map = {'normal': 15, 'fast': 11, 'tank': 22, 'shooter': 14, 'sniper': 13}
-        check_r = _size_map.get(etype, 16) + 14  # body size + wall clearance
+        if self.kills < 20:
+            if   rand < 0.40: etype, hp = 'normal',  base_hp
+            elif rand < 0.65: etype, hp = 'fast',    int(base_hp*0.5)
+            elif rand < 0.82: etype, hp = 'tank',    int(base_hp*2)
+            else:             etype, hp = 'shooter', int(base_hp*0.7)
+        else:
+            if   rand < 0.25: etype, hp = 'normal',  base_hp
+            elif rand < 0.45: etype, hp = 'fast',    int(base_hp*0.5)
+            elif rand < 0.70: etype, hp = 'tank',    int(base_hp*2.2)
+            else:             etype, hp = 'shooter', int(base_hp*0.7)
+
+        _size_map = {'normal': 15, 'fast': 11, 'tank': 22, 'shooter': 14}
+        check_r = _size_map.get(etype, 16) + 14
         for _ in range(400):
             ex, ey = self.chunk_manager.get_safe_pos_near_room()
             if not is_off_screen(ex-self.cam_x, ey-self.cam_y, VIEWPORT_W, VIEWPORT_H, margin=80):
                 continue
-            # Pixel-level check with actual radius — rejects wall overlap
             if not self.chunk_manager.is_pos_safe(ex, ey, check_r):
                 continue
             e = Enemy(ex, ey, hp, enemy_type=etype)
@@ -1816,7 +1879,7 @@ class ShooterGame:
             if self.player.health <= 0:
                 _save_mod.delete()
                 _save_mod.update_best_kills(self.kills)
-                return self._end_screen("GAME OVER", f"Kills: {self.kills} / {WIN_KILLS}", (255,80,80), (30,10,12))
+                return self._end_screen("GAME OVER", f"Kills: {self.kills}", (255,80,80), (30,10,12))
 
             self.clock.tick(60)
 
@@ -1842,28 +1905,33 @@ class ShooterGame:
         # Auto-shoot
         if self.shoot_cd == 0 and p.has_target:
             ba = math.atan2(p.shoot_dir[1], p.shoot_dir[0])
-            # Cannon tip is 27px forward from player centre in aim direction
             tip_x = p.x + math.cos(ba) * 27
             tip_y = p.y + math.sin(ba) * 27
 
-            shots = 2 if p.has_dual_gun else 1
-            for si in range(shots):
-                if p.has_dual_gun:
-                    # Side guns are 13px perpendicular to aim, 22px forward
-                    side_sign = 1 if si == 0 else -1
-                    bx = p.x + math.cos(ba) * 22 + math.cos(ba + math.pi/2) * side_sign * 13
-                    by = p.y + math.sin(ba) * 22 + math.sin(ba + math.pi/2) * side_sign * 13
-                else:
-                    bx, by = tip_x, tip_y
-                # Always fire one bullet straight at the target, spread extras around it
-                step = 0.22
+            # Build barrel positions: main cannon + one pair per dual_gun stack
+            perp_x = math.cos(ba + math.pi / 2)
+            perp_y = math.sin(ba + math.pi / 2)
+            gun_positions = [(tip_x, tip_y)]
+            if p.has_dual_gun:
+                fwd_x = p.x + math.cos(ba) * 22
+                fwd_y = p.y + math.sin(ba) * 22
+                for gn in range(p.dual_gun_count):
+                    off = 10 + gn * 10
+                    gun_positions.append((fwd_x + perp_x * off, fwd_y + perp_y * off))
+                    gun_positions.append((fwd_x - perp_x * off, fwd_y - perp_y * off))
+
+            step = 0.22
+            shot_inaccuracy = max(0.02, Bullet.INACCURACY - p.steady_aim * 0.04)
+            shot_speed = Bullet.SPEED * (p.speed / Player.BASE_SPEED)
+            for bx, by in gun_positions:
                 dirs = [[p.shoot_dir[0], p.shoot_dir[1]]]
                 for k in range(1, p.multi_shot):
                     side = 1 if k % 2 == 1 else -1
                     off  = side * step * ((k + 1) // 2)
                     dirs.append([math.cos(ba + off), math.sin(ba + off)])
                 for d in dirs:
-                    self.bullets.append(Bullet(bx, by, d, p.damage, p.bullet_bounce, p.bullet_pierce))
+                    self.bullets.append(Bullet(bx, by, d, p.damage, p.bullet_bounce, p.bullet_pierce,
+                                               inaccuracy=shot_inaccuracy, speed=shot_speed))
             self.shoot_cd = p.fire_rate
         if self.shoot_cd > 0:
             self.shoot_cd -= 1
@@ -1871,7 +1939,7 @@ class ShooterGame:
         if self.boss_active and self.current_boss not in self.enemies:
             self.boss_active  = False
             self.current_boss = None
-            p.health = p.MAX_HEALTH
+            p.health = min(p.MAX_HEALTH, p.health + 3)
 
         if self._init_spawns_left > 0:
             self._init_spawn_timer += 1
@@ -1895,6 +1963,12 @@ class ShooterGame:
             popup.update()
         self.popups = [pop for pop in self.popups if pop.lifetime > 0]
 
+        for p in self.particles:
+            p.update()
+        self.particles = [p for p in self.particles if p.life > 0]
+        if len(self.particles) > 120:
+            self.particles = self.particles[-120:]
+
     # ------------------------------------------------------------------
     # Player bullet update
     # ------------------------------------------------------------------
@@ -1902,14 +1976,20 @@ class ShooterGame:
     def _update_player_bullets(self):
         ws = WORLD_SIZE
         keep = []
-        if len(self.bullets) > 180:
-            self.bullets = self.bullets[-180:]
+        if len(self.bullets) > 80:
+            self.bullets = self.bullets[-80:]
+        # Cache nearby walls per chunk so bullets sharing a chunk only pay once
+        cs = self.chunk_manager.chunk_size
+        wall_cache: dict[tuple[int,int], list] = {}
         for b in self.bullets:
             b.update()
             if b.expired() or b.x<0 or b.x>ws or b.y<0 or b.y>ws:
                 continue
+            ck = (int(b.x) // cs, int(b.y) // cs)
+            if ck not in wall_cache:
+                wall_cache[ck] = self.chunk_manager.get_nearby_walls(b.x, b.y)
             hit_wall = False
-            for wall in self.chunk_manager.get_nearby_walls(b.x, b.y):
+            for wall in wall_cache[ck]:
                 if wall.collides(b.x, b.y, b.size):
                     if b.bounces_left > 0 and b.try_bounce(wall, self.frame):
                         b.x += b.dir[0]*b.speed*2
@@ -1930,6 +2010,15 @@ class ShooterGame:
         px, py = p.x, p.y
         bullets_to_remove: set[int] = set()
         still_alive: list[Enemy] = []
+
+        # Bucket bullets into a spatial grid — avoids O(E×B) full scan
+        _BCELL = 80
+        bullet_grid: dict[tuple[int,int], list] = {}
+        for _b in self.bullets:
+            _k = (int(_b.x) // _BCELL, int(_b.y) // _BCELL)
+            if _k not in bullet_grid:
+                bullet_grid[_k] = []
+            bullet_grid[_k].append(_b)
 
         for enemy in self.enemies:
             eid = id(enemy)
@@ -1970,9 +2059,13 @@ class ShooterGame:
             # Contact damage
             cdist = p.SIZE + enemy.size
             if dist_sq < cdist*cdist:
-                p.take_damage(2 if enemy.enemy_type=='tank' else 1)
+                contact_dmg = {'tank': 3, 'fast': 1, 'normal': 1, 'shooter': 1}.get(enemy.enemy_type, 1)
+                p.take_damage(contact_dmg)
                 if not enemy.is_boss:
                     self.kills += 1
+                    style = ENEMY_STYLES.get(enemy.enemy_type, {'rim': (255, 100, 60)})
+                    self.particles += _spawn_particles(enemy.x, enemy.y, style['rim'],
+                                                       count=14, speed=4.5, size=4, life=35)
                     self.items.append(Item(enemy.x, enemy.y, self._random_item_type()))
                     continue
 
@@ -1986,9 +2079,15 @@ class ShooterGame:
                     if sdx*sdx + sdy*sdy < (14+enemy.size)**2:
                         enemy.health -= 3
 
-            # Bullet hits
+            # Bullet hits — only check bullets in nearby grid cells
             killed = False
-            for b in self.bullets:
+            _ecx = int(enemy.x) // _BCELL
+            _ecy = int(enemy.y) // _BCELL
+            _nearby: list = []
+            for _ddx in range(-1, 2):
+                for _ddy in range(-1, 2):
+                    _nearby.extend(bullet_grid.get((_ecx+_ddx, _ecy+_ddy), []))
+            for b in _nearby:
                 if id(b) in bullets_to_remove: continue
                 if killed: break
                 if id(enemy) in b.hit_enemies: continue
@@ -2026,6 +2125,14 @@ class ShooterGame:
                         self.popups.append(Popup(
                             '+1 KILL', enemy.x, enemy.y-30, (255,220,60)
                         ))
+                        # Death particles
+                        style = ENEMY_STYLES.get(enemy.enemy_type, {'rim': (255,120,60)})
+                        pcol = style['rim'] if enemy.enemy_type in ENEMY_STYLES else (255,140,60)
+                        self.particles += _spawn_particles(enemy.x, enemy.y, pcol,
+                                                           count=18, speed=5.0, size=5, life=40)
+                        if enemy.is_boss:
+                            self.particles += _spawn_particles(enemy.x, enemy.y, (255,255,100),
+                                                               count=30, speed=7.0, size=7, life=55)
 
             if not killed:
                 still_alive.append(enemy)
@@ -2035,13 +2142,14 @@ class ShooterGame:
 
     def _random_item_type(self) -> str:
         r = random.random()
-        if   r < 0.15: return 'health'
-        elif r < 0.32: return 'firerate'
-        elif r < 0.48: return 'multishot'
-        elif r < 0.64: return 'damage'
-        elif r < 0.76: return 'bounce'
-        elif r < 0.88: return 'pierce'
-        else:          return 'speed'
+        if   r < 0.12: return 'health'
+        elif r < 0.24: return 'firerate'
+        elif r < 0.36: return 'multishot'
+        elif r < 0.50: return 'damage'
+        elif r < 0.62: return 'bounce'
+        elif r < 0.74: return 'pierce'
+        elif r < 0.87: return 'speed'
+        else:          return 'steady'
 
     def _boss_item_type(self) -> str:
         return random.choice(['orbital', 'dual_gun', 'explode', 'magnet'])
@@ -2054,8 +2162,8 @@ class ShooterGame:
         p  = self.player
         ws = WORLD_SIZE
         cdist_sq = (p.SIZE + 7) ** 2
-        if len(self.enemy_bullets) > 120:
-            self.enemy_bullets = self.enemy_bullets[-120:]
+        if len(self.enemy_bullets) > 60:
+            self.enemy_bullets = self.enemy_bullets[-60:]
         keep = []
         for b in self.enemy_bullets:
             b.update(p.x, p.y)
@@ -2063,7 +2171,13 @@ class ShooterGame:
                 continue
             dx, dy = b.x-p.x, b.y-p.y
             if dx*dx+dy*dy < cdist_sq:
-                dmg = 2 if b.is_cannon or b.bullet_type in ('mortar','snipe') else 1
+                # Damage by bullet type — shooter=1, tank cannon=3, tank mortar=2, boss bullets vary
+                if b.is_cannon:                dmg = 3
+                elif b.bullet_type == 'mortar': dmg = 2
+                elif b.bullet_type == 'laser':  dmg = 2
+                elif b.bullet_type == 'snipe':  dmg = 3
+                elif b.bullet_type == 'homing': dmg = 2
+                else:                           dmg = 1
                 p.take_damage(dmg)
                 continue
             if self.chunk_manager.tilemap.check_collision(b.x, b.y, b.size):
@@ -2125,9 +2239,16 @@ class ShooterGame:
         for item in self.items:
             item.draw(scr, cx, cy)
 
+        # Particles
+        for part in self.particles:
+            part.draw(scr, cx, cy)
+
         # Popups
         for popup in self.popups:
             popup.draw(scr, cx, cy)
+
+        # Vignette (dark-edge overlay, pre-cached)
+        scr.blit(self._vignette, (0, 0))
 
         # HUD
         self._draw_hud()
@@ -2152,62 +2273,85 @@ class ShooterGame:
         p   = self.player
 
         px, py = 12, 12
-        pw = 185   # logical column width for value alignment
-        sf = _get_font(15)
-        y  = py
-        lh = 22
+        pw  = 190   # column width for right-aligning values
+        sf  = _get_font(14)
+        hf  = _get_font(12)
+        y   = py
+        lh  = 20
+        sh  = 16   # section header height
 
         def _txt(text, color, bx, by):
-            sh = sf.render(text, True, (0, 0, 0))
-            scr.blit(sh, (bx+1, by+1))
+            shadow = sf.render(text, True, (0, 0, 0))
+            scr.blit(shadow, (bx+1, by+1))
             scr.blit(sf.render(text, True, color), (bx, by))
 
-        def stat_row(label, val, col):
+        def section(label):
             nonlocal y
-            active = bool(val) and val not in (0, '0', '100%', 'NO')
-            dot_c = col if active else (55, 52, 48)
+            y += 4
+            lbl = hf.render(label, True, (110, 105, 90))
+            scr.blit(lbl, (px + 2, y))
+            pygame.draw.line(scr, (70, 65, 52),
+                             (px + 2, y + sh - 2), (px + pw - 2, y + sh - 2), 1)
+            y += sh
+
+        def row(label, val, col):
+            nonlocal y
+            # val is a number or string; active when non-zero / non-default
+            if isinstance(val, str):
+                active = val not in ('0', '100%', 'NO')
+            else:
+                active = val != 0
+            dot_c = col if active else (50, 48, 42)
             pygame.draw.circle(scr, dot_c, (px + 6, y + 8), 4)
-            lbl_c = (200, 195, 185) if active else (100, 96, 90)
-            val_c = col if active else (90, 86, 80)
-            _txt(label,    lbl_c, px + 16, y)
-            vs = str(val)
-            vw = sf.size(vs)[0]
+            lbl_c = (200, 195, 185) if active else (95, 90, 82)
+            val_c = col if active else (85, 82, 75)
+            _txt(label, lbl_c, px + 16, y)
+            vs  = str(val)
+            vw  = sf.size(vs)[0]
             _txt(vs, val_c, px + pw - vw, y)
             y += lh
 
-        stat_row('Fire Rate',  f'{p.get_fire_rate_pct()}%', (255, 100, 255))
-        stat_row('Multi-Shot', p.multi_shot,                (100, 200, 255))
-        stat_row('Damage',     p.damage,                    (255, 150,  50))
-        stat_row('Bounce',     p.bullet_bounce,             (  0, 255, 220))
-        stat_row('Pierce',     p.bullet_pierce,             (220,  60, 255))
         speed_pct = int((p.speed / Player.BASE_SPEED) * 100)
-        stat_row('Speed',      f'{speed_pct}%',             (100, 255, 100))
-        # Boss-only drops
-        stat_row('Orbital Saw',  p.orbital_count,           (255, 210,   0))
-        stat_row('Dual Gun',     p.dual_gun_count,          (255, 100, 100))
-        stat_row('Explosives',   p.bullet_explode,          (255, 160,  30))
-        stat_row('Magnet',       'YES' if p.magnet else 'NO',(100, 200, 255))
+        mag_range = int(200 + p.magnet_count * 120) if p.magnet_count else 0
+        blast_r   = 40 + p.bullet_explode * 18
+
+        section('— BULLET —')
+        row('Fire Rate',   f'{p.get_fire_rate_pct()}%',  (255, 100, 255))
+        row('Multi-Shot',  p.multi_shot,                  (100, 200, 255))
+        row('Damage',      p.damage,                      (255, 150,  50))
+        row('Bounce',      p.bullet_bounce,               (  0, 255, 220))
+        row('Pierce',      p.bullet_pierce,               (220,  60, 255))
+
+        section('— BODY —')
+        row('Speed',       f'{speed_pct}%',               (100, 255, 100))
+        row('Steady Aim',  p.steady_aim,                  (180, 255, 180))
+
+        section('— SPECIAL —')
+        row('Orbital Saws',p.orbital_count,               (255, 210,   0))
+        row('Dual Guns',   p.dual_gun_count,              (255, 100, 100))
+        row('Blast Radius',blast_r if p.bullet_explode else 0, (255, 160, 30))
+        row('Magnet Range',mag_range if p.magnet_count else 0, (100, 200, 255))
 
     def _draw_kill_counter(self):
         scr = self.screen
         kf  = _get_font(22)
-        kills_txt = f'{self.kills} / {WIN_KILLS}  KILLS'
+        kills_txt = f'{self.kills}  KILLS'
         cx = VIEWPORT_W // 2
         # Drop shadow then text
         sh = kf.render(kills_txt, True, (0, 0, 0))
         tx = kf.render(kills_txt, True, (255, 230, 80))
         scr.blit(sh, (cx - sh.get_width()//2 + 2, 14))
         scr.blit(tx, (cx - tx.get_width()//2,     12))
-        # Thin progress bar directly below text
-        progress = self.kills / WIN_KILLS
-        bar_w = tx.get_width() + 20
-        bar_x = cx - bar_w // 2
-        bar_y = 12 + tx.get_height() + 3
-        pygame.draw.rect(scr, (50, 45, 35), (bar_x, bar_y, bar_w, 3), border_radius=1)
-        if progress > 0:
-            fw = int(bar_w * min(progress, 1.0))
-            col = (255, 230, 80) if progress < 0.8 else (100, 255, 120)
-            pygame.draw.rect(scr, col, (bar_x, bar_y, fw, 3), border_radius=1)
+        # Next boss indicator
+        next_boss = MINI_BOSS_INTERVAL - (self.kills % MINI_BOSS_INTERVAL)
+        if next_boss == MINI_BOSS_INTERVAL:
+            next_boss = 0  # just spawned one
+        hint_f = _get_font(13)
+        is_next_mega = ((self.kills // MINI_BOSS_INTERVAL + 1) * MINI_BOSS_INTERVAL) % MEGA_BOSS_INTERVAL == 0
+        boss_label = 'MEGA BOSS' if is_next_mega else 'BOSS'
+        if next_boss > 0:
+            hint = hint_f.render(f'{boss_label} IN {next_boss}', True, (200, 100, 60))
+            scr.blit(hint, hint.get_rect(center=(cx, 12 + tx.get_height() + 5)))
 
     def _draw_health_bar(self):
         scr = self.screen
@@ -2494,7 +2638,7 @@ def run_shooter_menu(screen: pygame.Surface) -> str:
 
         # Best score
         if best > 0:
-            bs = f_small.render(f'Best run: {best} / {WIN_KILLS} kills', True, (130, 160, 110))
+            bs = f_small.render(f'Best run: {best} kills', True, (130, 160, 110))
             screen.blit(bs, bs.get_rect(center=(cx, cy - 66)))
 
         # Buttons

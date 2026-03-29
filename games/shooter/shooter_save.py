@@ -1,8 +1,8 @@
 """
 Shooter run save — stores in-progress run state and best score.
 
-Save file:  games/shooter/shooter_save.json
-Best file:  games/shooter/shooter_best.json
+Save file:  %APPDATA%/ThePowerOf50/shooter_save.json
+Best file:  %APPDATA%/ThePowerOf50/shooter_best.json
 
 Save data format:
 {
@@ -25,9 +25,14 @@ import os
 import random
 import string
 
-_DIR      = os.path.dirname(os.path.abspath(__file__))
-SAVE_PATH = os.path.join(_DIR, 'shooter_save.json')
-BEST_PATH = os.path.join(_DIR, 'shooter_best.json')
+_APPDATA  = os.environ.get('APPDATA') or os.path.expanduser('~')
+_SAVE_DIR = os.path.join(_APPDATA, 'ThePowerOf50')
+SAVE_PATH = os.path.join(_SAVE_DIR, 'shooter_save.json')
+BEST_PATH = os.path.join(_SAVE_DIR, 'shooter_best.json')
+
+
+def _ensure_dir() -> None:
+    os.makedirs(_SAVE_DIR, exist_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +72,7 @@ def load() -> dict | None:
 
 
 def save(data: dict) -> None:
+    _ensure_dir()
     try:
         with open(SAVE_PATH, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2)
@@ -98,6 +104,7 @@ def get_best_kills() -> int:
 
 def update_best_kills(kills: int) -> None:
     if kills > get_best_kills():
+        _ensure_dir()
         try:
             with open(BEST_PATH, 'w', encoding='utf-8') as f:
                 json.dump({'best_kills': kills}, f)

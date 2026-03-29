@@ -1,71 +1,62 @@
-# Building The Power of 50 Executable
+# Build Instructions
 
 ## Quick Build (Recommended)
 
-Simply double-click `build.bat` or run:
+Double-click `build.bat` or run:
 ```bash
 build.bat
 ```
 
-This will:
-1. Install PyInstaller if needed
-2. Build the executable
-3. Place it in the `dist` folder
+This will check for PyInstaller, optionally clean previous builds, then run `build_exe.py`. The finished executable lands in `dist/ThePowerOf50.exe`.
 
 ## Manual Build
 
-If you prefer to build manually:
-
-### 1. Install PyInstaller
+### 1. Install dependencies
 ```bash
-pip install pyinstaller
+pip install -r requirements.txt
 ```
 
-### 2. Run PyInstaller
+### 2. Run the build script
 ```bash
-pyinstaller --name=ThePowerOf50 --onefile --windowed --add-data="Assets;Assets" --add-data="games;games" --add-data="Utils;Utils" --hidden-import=pygame dev/menu.py
+python build_exe.py
 ```
 
-### 3. Find Your Executable
-The executable will be in: `dist/ThePowerOf50.exe`
+### 3. Find the executable
+```
+dist/ThePowerOf50.exe
+```
 
 ## Build Options
 
-### Single File (Recommended)
-- Uses `--onefile` flag
-- Creates one portable .exe file
-- Slower startup (extracts to temp folder)
-- Easier to distribute
+### Single file (`--onefile`) — default
+- One portable `.exe`
+- Slightly slower startup (extracts to temp on first run)
+- Easiest to distribute
 
-### Directory Build (Faster Startup)
-Remove `--onefile` from the command to create a folder with the .exe and dependencies
+### Directory build (`--onedir`)
+Remove `--onefile` from `build_exe.py` to produce a folder instead:
 - Faster startup
-- Larger distribution size (folder with multiple files)
+- Larger distribution (folder with many files)
 
 ## Troubleshooting
 
-### Missing Assets
-If assets don't load, make sure the `--add-data` paths are correct:
-- Windows: `--add-data="Assets;Assets"`
-- Linux/Mac: `--add-data="Assets:Assets"`
+**Missing assets at runtime**
+Ensure `--add-data` paths in `build_exe.py` are correct. Windows uses `;` as the separator; Linux/Mac use `:`.
 
-### Import Errors
-Add missing modules with `--hidden-import=module_name`
+**ImportError on launch**
+Add the missing module to the `hidden_imports` list in `build_exe.py`:
+```python
+"your.missing.module",
+```
 
-### Antivirus False Positives
-Some antivirus software may flag PyInstaller executables. This is normal.
-You can:
-1. Add an exception for your exe
-2. Sign the executable with a code signing certificate
-3. Use `--onedir` instead of `--onefile`
+**Antivirus false positive**
+PyInstaller-packed executables are sometimes flagged. Options:
+- Add an antivirus exception for the `.exe`
+- Switch to `--onedir` which tends to trigger fewer false positives
+- Sign the executable with a code-signing certificate
 
 ## File Size
 
-The executable will be approximately 50-100 MB due to:
-- Python runtime
-- Pygame library
-- Game assets
-
-To reduce size:
+Expect roughly 50–100 MB due to the bundled Python runtime and Pygame. To reduce size:
 - Use `--onedir` instead of `--onefile`
-- Use UPX compression: `pip install upx` then add `--upx-dir=path/to/upx`
+- Add UPX compression: install UPX, then pass `--upx-dir=path/to/upx` to PyInstaller

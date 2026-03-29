@@ -1,2 +1,0 @@
-Doctor: Ok, Experiment ready
-Beep-Bot: READY!

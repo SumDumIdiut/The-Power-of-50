@@ -1,19 +1,24 @@
-# Snake Game
+# Snake
 
 ## Objective
-Collect 50 apples to win!
+Collect 50 apples to win.
 
 ## Controls
-- **Arrow Keys**: Move the snake
-- **ESC**: Return to main menu
+| Input      | Action         |
+|------------|----------------|
+| Arrow Keys | Move the snake |
+| ESC        | Quit to menu   |
 
 ## Gameplay
-- Guide the snake to eat apples
-- Each apple increases your score
-- Don't hit the walls or yourself
+- Guide the snake to eat apples — each one grows your tail
+- Avoid hitting the walls or your own tail
 - Reach 50 apples to win
+- High score is saved between sessions
 
 ## Files
-- `snake_game.py`: Main game logic
-- `helpers.py`: Helper functions for positioning and collision
-- `assets/`: Game assets (currently empty)
+| File            | Purpose                          |
+|-----------------|----------------------------------|
+| `snake_game.py` | Main game logic                  |
+| `snake_save.py` | Save/load high score             |
+| `helpers.py`    | Positioning and collision helpers|
+| `assets/`       | Game assets                      |
