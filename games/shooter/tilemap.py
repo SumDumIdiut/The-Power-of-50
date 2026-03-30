@@ -13,6 +13,12 @@ from __future__ import annotations
 
 import random
 
+try:
+    import numpy as _np
+    _NUMPY = True
+except ImportError:
+    _NUMPY = False
+
 
 # ---------------------------------------------------------------------------
 # Tilemap
@@ -25,6 +31,7 @@ class Tilemap:
         self.tile_size = tile_size
         # {(gx, gy): {"neighbor_count": int, "corner": bool}}
         self.tiles: dict[tuple[int, int], dict] = {}
+        self._tile_bitmap = None  # np.ndarray shape (H, W) dtype bool, built after map gen
 
     # ------------------------------------------------------------------
     # Tile manipulation
@@ -86,6 +93,59 @@ class Tilemap:
                             y + size > ty and y - size < ty + ts):
                         return True
         return False
+
+    def build_tile_bitmap(self) -> None:
+        """Bake self.tiles into a dense 2-D numpy bool array for fast batch collision.
+        Call once after map generation; the bitmap is static for the lifetime of the map.
+        """
+        if not _NUMPY:
+            return
+        all_keys = list(self.tiles.keys())
+        if not all_keys:
+            self._tile_bitmap = _np.zeros((1, 1), dtype=bool)
+            return
+        W = max(k[0] for k in all_keys) + 1
+        H = max(k[1] for k in all_keys) + 1
+        arr = _np.zeros((H, W), dtype=bool)
+        for gx, gy in all_keys:
+            arr[gy, gx] = True
+        self._tile_bitmap = arr
+
+    def check_collision_batch(self, xs, ys, szs):
+        """Vectorised tile collision for arrays of bullet positions.
+
+        xs, ys, szs: numpy float64 arrays of shape (N,).
+        Returns a numpy bool array of shape (N,) — True where the bullet
+        overlaps a solid tile.  Falls back to all-False if bitmap not built.
+        """
+        bmp = self._tile_bitmap
+        if bmp is None or not _NUMPY:
+            return _np.zeros(len(xs), dtype=bool)
+        ts  = self.tile_size
+        gxs = (xs // ts).astype(_np.int32)
+        gys = (ys // ts).astype(_np.int32)
+        H, W = bmp.shape
+        hit = _np.zeros(len(xs), dtype=bool)
+        for dgx in (-1, 0, 1):
+            for dgy in (-1, 0, 1):
+                cx = gxs + dgx
+                cy = gys + dgy
+                valid = (cx >= 0) & (cx < W) & (cy >= 0) & (cy < H)
+                vi = _np.where(valid)[0]
+                if len(vi) == 0:
+                    continue
+                solid = bmp[cy[vi], cx[vi]]
+                tx = cx[vi].astype(_np.float64) * ts
+                ty = cy[vi].astype(_np.float64) * ts
+                overlap = (
+                    solid
+                    & (xs[vi] + szs[vi] > tx)
+                    & (xs[vi] - szs[vi] < tx + ts)
+                    & (ys[vi] + szs[vi] > ty)
+                    & (ys[vi] - szs[vi] < ty + ts)
+                )
+                hit[vi] |= overlap
+        return hit
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +221,9 @@ class MapGenerator:
 
         # 5. Single bulk metadata refresh
         tm.update_tiles()
+
+        # 5b. Bake numpy tile bitmap for fast vectorised bullet collision
+        tm.build_tile_bitmap()
 
         # 6. Convert to pixel space
         ts = self.tile_size

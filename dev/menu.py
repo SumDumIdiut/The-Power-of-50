@@ -19,7 +19,10 @@ import pygame
 # ---------------------------------------------------------------------------
 # Path setup + module loading
 # ---------------------------------------------------------------------------
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if getattr(sys, 'frozen', False):
+    ROOT_DIR = sys._MEIPASS          # PyInstaller extracts here at runtime
+else:
+    ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
