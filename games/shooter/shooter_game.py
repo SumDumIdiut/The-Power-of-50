@@ -2234,6 +2234,7 @@ class ShooterGame:
             return
 
         # --- numpy vectorised CCD for simple bullets ---
+        cs = self.chunk_manager.chunk_size
         N = len(simple)
         xs   = _np.array([b.x        for b in simple], dtype=_np.float64)
         ys   = _np.array([b.y        for b in simple], dtype=_np.float64)
